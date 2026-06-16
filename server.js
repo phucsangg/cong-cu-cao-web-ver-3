@@ -22,7 +22,9 @@ app.get('/api/stream-scrape', async (req, res) => {
         maxPages = 20, 
         delay = 2000, 
         blockResources = 'true',
-        timeout = 30000
+        timeout = 30000,
+        parallel = 'false',
+        concurrency = 3
     } = req.query;
 
     if (!url) {
@@ -40,6 +42,8 @@ app.get('/api/stream-scrape', async (req, res) => {
     delay = Math.max(parseInt(delay) || 2000, 500);    // Tối thiểu 500ms
     const isBlockResources = blockResources === 'true';
     const scrapeTimeout = Math.max(parseInt(timeout) || 30000, 5000);
+    const isParallel = parallel === 'true';
+    const numConcurrency = Math.min(Math.max(parseInt(concurrency) || 3, 2), 10);
 
     const cleanUrl = url.trim();
     
@@ -69,7 +73,7 @@ app.get('/api/stream-scrape', async (req, res) => {
     logToClient(`Bắt đầu chiến dịch trích xuất thông tin.`);
     logToClient(`URL đích: ${cleanUrl}`);
     logToClient(`Chế độ chuyển trang: ${paginationMode === 'button' ? 'Click nút chuyển tiếp (Next)' : `Tham số URL (${pageParam}=X)`}`);
-    logToClient(`Cấu hình: Giới hạn ${maxPages} trang | Delay nghỉ ${delay}ms | Timeout ${scrapeTimeout}ms | Chặn tài nguyên: ${isBlockResources}`);
+    logToClient(`Cấu hình: Giới hạn ${maxPages} trang | Delay nghỉ ${delay}ms | Timeout ${scrapeTimeout}ms | Chặn tài nguyên: ${isBlockResources}${paginationMode === 'url' && isParallel ? ` | Cào SONG SONG (Luồng: ${numConcurrency})` : ''}`);
 
     let browser;
     try {
@@ -81,10 +85,429 @@ app.get('/api/stream-scrape', async (req, res) => {
                 '--disable-setuid-sandbox', 
                 '--disable-blink-features=AutomationControlled',
                 '--disable-dev-shm-usage',
-                '--disable-gpu'
+                '--disable-gpu',
+                '--no-zygote',
+                '--no-first-run',
+                '--disable-extensions',
+                '--disable-default-apps',
+                '--disable-features=Translate,BackForwardCache,SharedArrayBuffer'
             ] 
         });
         
+        let numPage = 1;
+        let globalIndex = 0;
+        const tatCaTenDaQuetToanCuc = new Set();
+        let lastPageProductsCount = -1;
+
+        // CHẾ ĐỘ CÀO SONG SONG (Chỉ hỗ trợ chế độ URL parameter)
+        if (paginationMode === 'url' && isParallel) {
+            logToClient(`Bắt đầu cào SONG SONG (Số luồng đồng thời: ${numConcurrency})...`);
+            
+            const pagesToScrape = [];
+            for (let p = 1; p <= maxPages; p++) {
+                pagesToScrape.push(p);
+            }
+
+            const scrapePage = async (pNum) => {
+                if (isClientDisconnected || !tiepTucQuetMultiPage) return;
+
+                let pageInstance = null;
+                try {
+                    pageInstance = await browser.newPage();
+                    await pageInstance.setDefaultNavigationTimeout(scrapeTimeout);
+                    await pageInstance.setDefaultTimeout(scrapeTimeout);
+                    await pageInstance.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+                    await pageInstance.setViewport({ width: 1366, height: 768 });
+                    await pageInstance.setExtraHTTPHeaders({
+                        'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
+                    });
+
+                    if (isBlockResources) {
+                        await pageInstance.setRequestInterception(true);
+                        pageInstance.on('request', (req) => {
+                            const resourceType = req.resourceType();
+                            const reqUrl = req.url().toLowerCase();
+                            if (
+                                ['image', 'media', 'font'].includes(resourceType) ||
+                                reqUrl.includes('google-analytics') ||
+                                reqUrl.includes('doubleclick') ||
+                                reqUrl.includes('facebook') ||
+                                reqUrl.includes('hotjar') ||
+                                reqUrl.includes('pixel') ||
+                                reqUrl.includes('analytics') ||
+                                reqUrl.includes('adservice')
+                            ) {
+                                req.abort();
+                            } else {
+                                req.continue();
+                            }
+                        });
+                    }
+
+                    let urlChayThucTe = cleanUrl;
+                    if (pNum > 1) {
+                        if (urlChayThucTe.includes('?')) {
+                            const searchParams = new URLSearchParams(urlChayThucTe.split('?')[1]);
+                            searchParams.set(pageParam, pNum);
+                            urlChayThucTe = urlChayThucTe.split('?')[0] + '?' + searchParams.toString();
+                        } else {
+                            urlChayThucTe = `${urlChayThucTe}?${pageParam}=${pNum}`;
+                        }
+                    }
+
+                    logToClient(`[Trang ${pNum}] Đang kết nối tới URL...`);
+                    try {
+                        await pageInstance.goto(urlChayThucTe, { waitUntil: 'domcontentloaded', timeout: scrapeTimeout });
+                    } catch (urlGotoError) {
+                        logToClient(`[Trang ${pNum}] Cảnh báo: Tải trang chậm. Đang trích xuất DOM hiện có...`, 'warning');
+                    }
+
+                    if (isClientDisconnected || !tiepTucQuetMultiPage) return;
+
+                    logToClient(`[Trang ${pNum}] Đang cuộn trang (lazy-load)...`);
+                    await pageInstance.evaluate(async () => {
+                        await new Promise((resolve) => {
+                            let totalHeight = 0;
+                            const distance = 800;
+                            let scrolls = 0;
+                            const maxScrolls = 15;
+                            const timer = setInterval(() => {
+                                const scrollHeight = document.body.scrollHeight;
+                                window.scrollBy(0, distance);
+                                totalHeight += distance;
+                                scrolls++;
+                                if (totalHeight >= scrollHeight - distance || scrolls >= maxScrolls) {
+                                    clearInterval(timer);
+                                    resolve();
+                                }
+                            }, 80);
+                        });
+                    });
+
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    if (isClientDisconnected || !tiepTucQuetMultiPage) return;
+
+                    logToClient(`[Trang ${pNum}] Đang trích xuất dữ liệu bằng Heuristic...`);
+                    const productsOnPage = await pageInstance.evaluate((currentPageNum, currentUrl) => {
+                        const ketQuaTrang = [];
+                        const tuKhoaRac = [
+                            'chính sách', 'hướng dẫn', 'tin tức', 'liên hệ', 'bài viết', 
+                            'giỏ hàng', 'tài khoản', 'showroom', 'tuyển dụng', 'địa chỉ', 
+                            'hotline', 'góp ý', 'bảo hành', 'trả góp', 'thương hiệu', 
+                            'nổi bật', 'cổ điển', 'xem thêm', 'danh mục', 'giới thiệu', 
+                            'đăng ký', 'đăng nhập', 'tin công nghệ', 'hệ thống', 'sơ đồ'
+                        ];
+
+                        function checkIfPrice(text) {
+                            text = text.trim().toLowerCase();
+                            if (!text) return false;
+                            
+                            const numericOnly = text.replace(/\D/g, '');
+                            if (/^0\d{9}$/.test(numericOnly) || /^1800\d{4}$/.test(numericOnly) || /^1900\d{4}$/.test(numericOnly)) return false;
+                            
+                            const hasCurrency = text.includes('đ') || text.includes('₫') || text.includes('$') || text.includes('vnd') || text.includes('vnđ');
+                            const cleanText = text.replace(/[\d.,\sđ₫$%\-]/g, '').replace(/vnd|vnđ/g, '');
+                            if (cleanText.length > 0) return false; 
+                            
+                            const hasDigit = /\d/.test(text);
+                            if (!hasDigit) return false;
+                            
+                            if (hasCurrency) {
+                                if (/[.,]\d$/.test(text.replace(/[^0-9.,]/g, '')) && !text.includes('$')) return false;
+                                return true;
+                            }
+                            
+                            const hasThousandSeparator = /^\d{1,3}([.,]\d{3})+$/.test(text);
+                            return hasThousandSeparator;
+                        }
+
+                        const isExcluded = (id, className) => {
+                            const exclusions = [
+                                'menu', 'sidebar', 'footer', 'header', 'nav', 'aside', 'widget', 
+                                'filter', 'banner', 'slider', 'carousel', 'breadcrumb', 'search',
+                                'cart', 'checkout', 'login', 'register', 'auth', 'social', 'share',
+                                'comment', 'review', 'rating', 'newsletter', 'subscribe', 'pagination'
+                            ];
+                            return exclusions.some(word => id.includes(word) || className.includes(word));
+                        };
+                        
+                        function isOriginalPriceEl(el) {
+                            const cn = el.className ? String(el.className).toLowerCase() : "";
+                            const tn = el.tagName ? String(el.tagName).toLowerCase() : "";
+                            if (cn.includes('line') || cn.includes('old') || cn.includes('del') || tn === 'del' || tn === 's') return true;
+                            try {
+                                const cs = window.getComputedStyle(el);
+                                if (cs.textDecorationLine === 'line-through' || cs.textDecoration.includes('line-through')) return true;
+                            } catch(e) {}
+                            return false;
+                        }
+                        
+                        function getPriceText(el) {
+                            function walk(node) {
+                                if (node.nodeType === 3) {
+                                    return node.textContent;
+                                }
+                                if (node.nodeType === 1) {
+                                    const className = node.className ? String(node.className).toLowerCase() : "";
+                                    const tagName = node.tagName ? String(node.tagName).toLowerCase() : "";
+                                    
+                                    let isLineThrough = false;
+                                    try {
+                                        const computedStyle = window.getComputedStyle(node);
+                                        isLineThrough = computedStyle.textDecorationLine === 'line-through' || 
+                                                        computedStyle.textDecoration === 'line-through' ||
+                                                        computedStyle.textDecoration.includes('line-through');
+                                    } catch (e) {}
+
+                                    if (className.includes('line') || className.includes('old') || className.includes('del') || tagName === 'del' || tagName === 's' || isLineThrough) {
+                                        return "";
+                                    }
+                                    
+                                    let text = "";
+                                    for (let child of node.childNodes) {
+                                        text += walk(child);
+                                    }
+                                    return text;
+                                }
+                                return "";
+                            }
+                            return walk(el).trim();
+                        }
+                        
+                        const allElements = Array.from(document.querySelectorAll('*'));
+                        const possiblePriceElements = [];
+                        const digitRegex = /\d/;
+                        for (let el of allElements) {
+                            if (el.children.length > 50) continue;
+                            const id = el.id ? String(el.id).toLowerCase() : "";
+                            const className = el.className ? String(el.className).toLowerCase() : "";
+                            if (isExcluded(id, className)) continue;
+                            
+                            const text = el.innerText || "";
+                            if (!text || text.length > 30) continue;
+                            if (!digitRegex.test(text)) continue;
+                            
+                            possiblePriceElements.push(el);
+                        }
+                        
+                        const theChuaGia = possiblePriceElements.filter(el => {
+                            const text = getPriceText(el);
+                            if (!checkIfPrice(text)) return false;
+                            
+                            const children = Array.from(el.children);
+                            const childrenWithPrice = children.filter(child => checkIfPrice((child.innerText || "").trim()));
+
+                            if (childrenWithPrice.length === 0) return true;
+
+                            const allChildPricesAreOriginal = childrenWithPrice.every(child => isOriginalPriceEl(child));
+                            return allChildPricesAreOriginal;
+                        });
+
+                        theChuaGia.forEach(priceNode => {
+                            const rawPrice = getPriceText(priceNode);
+                            let parent = priceNode.parentElement;
+                            let foundProduct = null;
+
+                            const classNameNode = priceNode.className ? String(priceNode.className).toLowerCase() : "";
+                            const tagNameNode = priceNode.tagName ? String(priceNode.tagName).toLowerCase() : "";
+                            
+                            let isLineThrough = false;
+                            try {
+                                const computedStyle = window.getComputedStyle(priceNode);
+                                isLineThrough = computedStyle.textDecorationLine === 'line-through' || 
+                                                computedStyle.textDecoration === 'line-through' ||
+                                                computedStyle.textDecoration.includes('line-through');
+                            } catch (e) {}
+
+                            const isOriginal = classNameNode.includes('line') || 
+                                               classNameNode.includes('old') || 
+                                               classNameNode.includes('del') || 
+                                               tagNameNode === 'del' || 
+                                               tagNameNode === 's' || 
+                                               isLineThrough;
+
+                            for (let step = 0; step < 5; step++) {
+                                if (!parent) break;
+
+                                const idParent = parent.id ? String(parent.id).toLowerCase() : "";
+                                const classParent = parent.className ? String(parent.className).toLowerCase() : "";
+                                
+                                if (isExcluded(idParent, classParent)) break;
+
+                                const targetTitles = Array.from(parent.querySelectorAll('h1, h2, h3, h4, h5, h6, [class*="title"], [class*="name"], .title, .name, a'));
+                                let titleText = "";
+                                let titleHref = "";
+
+                                for (const titleNode of targetTitles) {
+                                    const txt = titleNode.innerText ? titleNode.innerText.replace(/\s+/g, ' ').trim() : "";
+                                    if (txt && txt.length >= 8 && txt.length < 150 && txt !== rawPrice && !checkIfPrice(txt)) {
+                                        const laRac = tuKhoaRac.some(x => txt.toLowerCase().includes(x));
+                                        if (!laRac) {
+                                            titleText = txt;
+                                            let nodeLink = titleNode;
+                                            for (let i = 0; i < 3; i++) {
+                                                if (nodeLink && nodeLink.tagName === 'A') {
+                                                    titleHref = nodeLink.getAttribute('href');
+                                                    break;
+                                                }
+                                                if (nodeLink) nodeLink = nodeLink.parentElement;
+                                            }
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                const images = Array.from(parent.querySelectorAll('img'));
+                                let imgSrc = "";
+                                for (const img of images) {
+                                    const src = img.getAttribute('src') || 
+                                                 img.getAttribute('data-src') || 
+                                                 img.getAttribute('data-original') || 
+                                                 img.getAttribute('lazy-src') || 
+                                                 img.getAttribute('data-lazy-src');
+                                    if (src && !src.startsWith('data:image')) {
+                                        imgSrc = src;
+                                        break;
+                                    }
+                                }
+
+                                if (!titleHref) {
+                                    const links = Array.from(parent.querySelectorAll('a'));
+                                    for (const link of links) {
+                                        const href = link.getAttribute('href');
+                                        if (href && href.length > 2 && !href.startsWith('#') && !href.startsWith('javascript:')) {
+                                            titleHref = href;
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                if (titleText) {
+                                    let absoluteLink = titleHref || "";
+                                    if (absoluteLink && !absoluteLink.startsWith('http') && !absoluteLink.startsWith('//')) {
+                                        try {
+                                            absoluteLink = new URL(absoluteLink, currentUrl).href;
+                                        } catch (err) {}
+                                    } else if (absoluteLink && absoluteLink.startsWith('//')) {
+                                        absoluteLink = 'https:' + absoluteLink;
+                                    }
+
+                                    let absoluteImg = imgSrc || "";
+                                    if (absoluteImg && !absoluteImg.startsWith('http') && !absoluteImg.startsWith('//')) {
+                                        try {
+                                            absoluteImg = new URL(absoluteImg, currentUrl).href;
+                                        } catch (err) {}
+                                    } else if (absoluteImg && absoluteImg.startsWith('//')) {
+                                        absoluteImg = 'https:' + absoluteImg;
+                                    }
+
+                                    foundProduct = {
+                                        ten: titleText,
+                                        gia: rawPrice,
+                                        trang: currentPageNum,
+                                        link: absoluteLink,
+                                        anh: absoluteImg,
+                                        isOriginal: isOriginal
+                                    };
+                                    break;
+                                }
+
+                                parent = parent.parentElement;
+                            }
+
+                            if (foundProduct) {
+                                ketQuaTrang.push(foundProduct);
+                            }
+                        });
+
+                        return ketQuaTrang;
+                    }, pNum, pageInstance.url());
+
+                    const uniqueMap = new Map();
+                    productsOnPage.forEach(sp => {
+                        const uniqueKey = sp.link || sp.ten;
+                        if (!uniqueKey) return;
+                        if (uniqueMap.has(uniqueKey)) {
+                            const existingSp = uniqueMap.get(uniqueKey);
+                            if (existingSp.isOriginal && !sp.isOriginal) {
+                                uniqueMap.set(uniqueKey, sp);
+                            } else if (!existingSp.isOriginal && sp.isOriginal) {
+                                // do nothing
+                            } else {
+                                const valNew = parseInt(sp.gia.replace(/\D/g, '')) || 0;
+                                const valExisting = parseInt(existingSp.gia.replace(/\D/g, '')) || 0;
+                                if (valNew > 0 && (valExisting === 0 || valNew < valExisting)) {
+                                    uniqueMap.set(uniqueKey, sp);
+                                }
+                            }
+                        } else {
+                            uniqueMap.set(uniqueKey, sp);
+                        }
+                    });
+                    const uniqueProducts = Array.from(uniqueMap.values());
+                    logToClient(`[Trang ${pNum}] Đã trích xuất ${uniqueProducts.length} sản phẩm độc lập.`);
+
+                    let soLuongMoiThucTe = 0;
+                    if (uniqueProducts.length > 0) {
+                        uniqueProducts.forEach(sp => {
+                            const uniqueKey = sp.link || sp.ten;
+                            if (!tatCaTenDaQuetToanCuc.has(uniqueKey)) {
+                                tatCaTenDaQuetToanCuc.add(uniqueKey);
+                                globalIndex++;
+                                sendSSE(res, 'product', { ...sp, stt: globalIndex });
+                                soLuongMoiThucTe++;
+                            }
+                        });
+                        logToClient(`[Trang ${pNum}] Gửi thành công ${soLuongMoiThucTe} sản phẩm mới (Trùng lặp: ${uniqueProducts.length - soLuongMoiThucTe}).`, 'success');
+                    }
+
+                    sendSSE(res, 'stats', {
+                        currentPage: pNum,
+                        totalItems: globalIndex,
+                        lastPageCount: uniqueProducts.length,
+                        newItems: soLuongMoiThucTe
+                    });
+
+                    if (uniqueProducts.length === 0 || (pNum > 1 && soLuongMoiThucTe === 0)) {
+                        logToClient(`[Trang ${pNum}] Không có sản phẩm mới. Phát hiện chạm đáy hoặc trang lặp.`, 'warning');
+                        tiepTucQuetMultiPage = false;
+                    }
+
+                } catch (err) {
+                    logToClient(`[Trang ${pNum}] Xảy ra lỗi: ${err.message}`, 'error');
+                } finally {
+                    if (pageInstance) {
+                        try {
+                            await pageInstance.close();
+                        } catch (closeErr) {}
+                    }
+                }
+            };
+
+            for (let i = 0; i < pagesToScrape.length; i += numConcurrency) {
+                if (isClientDisconnected || !tiepTucQuetMultiPage) break;
+                
+                const chunk = pagesToScrape.slice(i, i + numConcurrency);
+                logToClient(`Đang khởi động cào nhóm trang song song: ${chunk.join(', ')}...`);
+                await Promise.all(chunk.map(p => scrapePage(p)));
+
+                if (i + numConcurrency < pagesToScrape.length && tiepTucQuetMultiPage && !isClientDisconnected) {
+                    logToClient(`Nghỉ ${delay}ms trước khi cào nhóm trang tiếp theo...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+
+            logToClient(`=== CHIẾN DỊCH HOÀN THÀNH XUẤT SẮC ===`, 'success');
+            logToClient(`Đã vét thành công tổng cộng ${globalIndex} sản phẩm.`);
+            sendSSE(res, 'done', {
+                totalItems: globalIndex,
+                totalPages: maxPages
+            });
+            res.end();
+            return;
+        }
+
+        // CHẾ ĐỘ CÀO TUẦN TỰ (Sequential Scrape)
         const page = await browser.newPage();
         await page.setDefaultNavigationTimeout(scrapeTimeout);
         await page.setDefaultTimeout(scrapeTimeout);
@@ -120,11 +543,6 @@ app.get('/api/stream-scrape', async (req, res) => {
             });
         }
 
-        let numPage = 1;
-        let globalIndex = 0;
-        const tatCaTenDaQuetToanCuc = new Set();
-        let lastPageProductsCount = -1;
-        
         // Mở trang đầu tiên
         logToClient(`Đang khởi động Chrome ảo và kết nối tới URL nguồn...`);
         try {
@@ -161,14 +579,14 @@ app.get('/api/stream-scrape', async (req, res) => {
                 }
             }
 
-            // Cuộn chuột kích hoạt Lazyload (tối đa 35 lần cuộn để tối ưu hóa thời gian)
+            // Cuộn chuột kích hoạt Lazyload (tối ưu hóa tốc độ: 800px, 80ms, tối đa 15 lần cuộn)
             logToClient(`Đang cuộn trang (lazy-load) để hiển thị sản phẩm ẩn...`);
             await page.evaluate(async () => {
                 await new Promise((resolve) => {
                     let totalHeight = 0;
-                    let distance = 600;
+                    const distance = 800;
                     let scrolls = 0;
-                    const maxScrolls = 35;
+                    const maxScrolls = 15;
                     const timer = setInterval(() => {
                         const scrollHeight = document.body.scrollHeight;
                         window.scrollBy(0, distance);
@@ -179,7 +597,7 @@ app.get('/api/stream-scrape', async (req, res) => {
                             clearInterval(timer);
                             resolve();
                         }
-                    }, 150);
+                    }, 80);
                 });
             });
 
@@ -202,31 +620,21 @@ app.get('/api/stream-scrape', async (req, res) => {
                     text = text.trim().toLowerCase();
                     if (!text) return false;
                     
-                    // Exclude Vietnamese phone numbers (10 digits starting with 0) and toll-free numbers (starting with 1800/1900)
                     const numericOnly = text.replace(/\D/g, '');
                     if (/^0\d{9}$/.test(numericOnly) || /^1800\d{4}$/.test(numericOnly) || /^1900\d{4}$/.test(numericOnly)) return false;
                     
-                    // Extract currency symbol
                     const hasCurrency = text.includes('đ') || text.includes('₫') || text.includes('$') || text.includes('vnd') || text.includes('vnđ');
-                    
-                    // Remove digits, dots, commas, spaces, currency symbols, percentage, minus
                     const cleanText = text.replace(/[\d.,\sđ₫$%\-]/g, '').replace(/vnd|vnđ/g, '');
-                    if (cleanText.length > 0) {
-                        return false; 
-                    }
+                    if (cleanText.length > 0) return false; 
                     
                     const hasDigit = /\d/.test(text);
                     if (!hasDigit) return false;
                     
                     if (hasCurrency) {
-                        // Exclude paragraph decimals like "2.1 đ" for VND
-                        if (/[.,]\d$/.test(text.replace(/[^0-9.,]/g, '')) && !text.includes('$')) {
-                            return false;
-                        }
+                        if (/[.,]\d$/.test(text.replace(/[^0-9.,]/g, '')) && !text.includes('$')) return false;
                         return true;
                     }
                     
-                    // If no currency symbol, require standard thousands grouping (e.g. 150.000 or 2.500.000)
                     const hasThousandSeparator = /^\d{1,3}([.,]\d{3})+$/.test(text);
                     return hasThousandSeparator;
                 }
@@ -241,38 +649,6 @@ app.get('/api/stream-scrape', async (req, res) => {
                     return exclusions.some(word => id.includes(word) || className.includes(word));
                 };
                 
-                // Lấy tất cả các thẻ trong trang
-                const tatCaThe = Array.from(document.querySelectorAll('*'));
-                
-                function getPriceText(el) {
-                    const clone = el.cloneNode(true);
-                    const removeOldPrices = (node) => {
-                        if (!node || !node.children) return;
-                        Array.from(node.children).forEach(child => {
-                            const className = child.className ? String(child.className).toLowerCase() : "";
-                            const tagName = child.tagName ? String(child.tagName).toLowerCase() : "";
-                            
-                            let isLineThrough = false;
-                            try {
-                                const computedStyle = window.getComputedStyle(child);
-                                isLineThrough = computedStyle.textDecorationLine === 'line-through' || 
-                                                computedStyle.textDecoration === 'line-through' ||
-                                                computedStyle.textDecoration.includes('line-through');
-                            } catch (e) {}
-
-                            if (className.includes('line') || className.includes('old') || className.includes('del') || tagName === 'del' || tagName === 's' || isLineThrough) {
-                                try {
-                                    node.removeChild(child);
-                                } catch (e) {}
-                            } else {
-                                removeOldPrices(child);
-                            }
-                        });
-                    };
-                    removeOldPrices(clone);
-                    return clone.innerText ? clone.innerText.trim() : "";
-                }
-
                 function isOriginalPriceEl(el) {
                     const cn = el.className ? String(el.className).toLowerCase() : "";
                     const tn = el.tagName ? String(el.tagName).toLowerCase() : "";
@@ -283,25 +659,65 @@ app.get('/api/stream-scrape', async (req, res) => {
                     } catch(e) {}
                     return false;
                 }
+                
+                function getPriceText(el) {
+                    function walk(node) {
+                        if (node.nodeType === 3) { // Node.TEXT_NODE
+                            return node.textContent;
+                        }
+                        if (node.nodeType === 1) { // Node.ELEMENT_NODE
+                            const className = node.className ? String(node.className).toLowerCase() : "";
+                            const tagName = node.tagName ? String(node.tagName).toLowerCase() : "";
+                            
+                            let isLineThrough = false;
+                            try {
+                                const computedStyle = window.getComputedStyle(node);
+                                isLineThrough = computedStyle.textDecorationLine === 'line-through' || 
+                                                computedStyle.textDecoration === 'line-through' ||
+                                                computedStyle.textDecoration.includes('line-through');
+                            } catch (e) {}
 
-                // Bộ lọc lấy các nút chứa giá tiền, đảm bảo là phần tử sâu nhất chứa giá trị đó
-                // Dùng child.innerText (thô) để phát hiện con chứa giá — bao gồm cả span giá cũ bị gạch
-                // Nhưng nếu tất cả con chứa giá đều là giá gốc/gạch, vẫn chọn element cha (nó chứa giá KM)
-                const theChuaGia = tatCaThe.filter(el => {
+                            if (className.includes('line') || className.includes('old') || className.includes('del') || tagName === 'del' || tagName === 's' || isLineThrough) {
+                                return "";
+                            }
+                            
+                            let text = "";
+                            for (let child of node.childNodes) {
+                                text += walk(child);
+                            }
+                            return text;
+                        }
+                        return "";
+                    }
+                    return walk(el).trim();
+                }
+                
+                // Lọc sớm phần tử
+                const allElements = Array.from(document.querySelectorAll('*'));
+                const possiblePriceElements = [];
+                const digitRegex = /\d/;
+                for (let el of allElements) {
+                    if (el.children.length > 50) continue;
+                    const id = el.id ? String(el.id).toLowerCase() : "";
+                    const className = el.className ? String(el.className).toLowerCase() : "";
+                    if (isExcluded(id, className)) continue;
+                    
+                    const text = el.innerText || "";
+                    if (!text || text.length > 30) continue;
+                    if (!digitRegex.test(text)) continue;
+                    
+                    possiblePriceElements.push(el);
+                }
+                
+                const theChuaGia = possiblePriceElements.filter(el => {
                     const text = getPriceText(el);
                     if (!checkIfPrice(text)) return false;
                     
                     const children = Array.from(el.children);
-                    // Kiểm tra con nào có giá hợp lệ trong raw innerText
                     const childrenWithPrice = children.filter(child => checkIfPrice((child.innerText || "").trim()));
 
-                    if (childrenWithPrice.length === 0) {
-                        // Không có con nào có giá -> đây là leaf price node
-                        return true;
-                    }
+                    if (childrenWithPrice.length === 0) return true;
 
-                    // Nếu có con chứa giá: chỉ chọn element này nếu tất cả con chứa giá đều là giá gốc/gạch
-                    // (tức là bản thân element này là container chứa: [giá KM text node] + [span giá gạch])
                     const allChildPricesAreOriginal = childrenWithPrice.every(child => isOriginalPriceEl(child));
                     return allChildPricesAreOriginal;
                 });
@@ -329,34 +745,24 @@ app.get('/api/stream-scrape', async (req, res) => {
                                        tagNameNode === 's' || 
                                        isLineThrough;
 
-                    // Duyệt ngược lên tối đa 5 cấp để tìm container sản phẩm
                     for (let step = 0; step < 5; step++) {
                         if (!parent) break;
 
                         const idParent = parent.id ? String(parent.id).toLowerCase() : "";
                         const classParent = parent.className ? String(parent.className).toLowerCase() : "";
                         
-                        // Chặn các vùng bao quanh không liên quan
-                        if (isExcluded(idParent, classParent)) {
-                            break;
-                        }
+                        if (isExcluded(idParent, classParent)) break;
 
-                        // 1. Tìm phần tử chứa tiêu đề sản phẩm (thẻ heading, hoặc thẻ có class/id tương tự)
                         const targetTitles = Array.from(parent.querySelectorAll('h1, h2, h3, h4, h5, h6, [class*="title"], [class*="name"], .title, .name, a'));
                         let titleText = "";
                         let titleHref = "";
 
                         for (const titleNode of targetTitles) {
                             const txt = titleNode.innerText ? titleNode.innerText.replace(/\s+/g, ' ').trim() : "";
-                            
-                            // Tiêu đề sản phẩm thường có độ dài hợp lý và không được trùng giá
                             if (txt && txt.length >= 8 && txt.length < 150 && txt !== rawPrice && !checkIfPrice(txt)) {
-                                // Loại trừ rác
                                 const laRac = tuKhoaRac.some(x => txt.toLowerCase().includes(x));
                                 if (!laRac) {
                                     titleText = txt;
-                                    
-                                    // Tìm liên kết (href) liên quan đến tiêu đề
                                     let nodeLink = titleNode;
                                     for (let i = 0; i < 3; i++) {
                                         if (nodeLink && nodeLink.tagName === 'A') {
@@ -370,7 +776,6 @@ app.get('/api/stream-scrape', async (req, res) => {
                             }
                         }
 
-                        // 2. Tìm ảnh sản phẩm
                         const images = Array.from(parent.querySelectorAll('img'));
                         let imgSrc = "";
                         for (const img of images) {
@@ -385,7 +790,6 @@ app.get('/api/stream-scrape', async (req, res) => {
                             }
                         }
 
-                        // 3. Tìm link sản phẩm nếu tiêu đề chưa có link
                         if (!titleHref) {
                             const links = Array.from(parent.querySelectorAll('a'));
                             for (const link of links) {
@@ -397,9 +801,7 @@ app.get('/api/stream-scrape', async (req, res) => {
                             }
                         }
 
-                        // Nếu tìm thấy tiêu đề, thiết lập thông tin và kết thúc tìm container
                         if (titleText) {
-                            // Chuẩn hóa link sản phẩm
                             let absoluteLink = titleHref || "";
                             if (absoluteLink && !absoluteLink.startsWith('http') && !absoluteLink.startsWith('//')) {
                                 try {
@@ -409,7 +811,6 @@ app.get('/api/stream-scrape', async (req, res) => {
                                 absoluteLink = 'https:' + absoluteLink;
                             }
 
-                            // Chuẩn hóa link ảnh
                             let absoluteImg = imgSrc || "";
                             if (absoluteImg && !absoluteImg.startsWith('http') && !absoluteImg.startsWith('//')) {
                                 try {

@@ -336,6 +336,16 @@
                                         <label for="timeoutInput" class="form-label small fw-semibold text-muted">Chờ tải trang (ms):</label>
                                         <input type="number" id="timeoutInput" class="form-control form-control-sm" value="30000" min="5000" max="120000" step="5000">
                                     </div>
+                                    <div class="col-md-3" id="parallelGroup" style="display: none;">
+                                        <div class="form-check form-switch mt-4 pt-1">
+                                            <input class="form-check-input bg-success border-secondary" type="checkbox" id="parallelScrape" onchange="toggleParallelScrape()">
+                                            <label class="form-check-label small fw-semibold text-muted" for="parallelScrape">⚡ Cào song song</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-2" id="concurrencyGroup" style="display: none;">
+                                        <label for="concurrencyInput" class="form-label small fw-semibold text-muted">Số luồng cào:</label>
+                                        <input type="number" id="concurrencyInput" class="form-control form-control-sm" value="3" min="2" max="10">
+                                    </div>
                                     <div class="col-12 mt-3 d-flex align-items-center justify-content-between">
                                         <div class="form-check form-switch">
                                             <input class="form-check-input bg-success border-secondary" type="checkbox" id="blockResources" checked>
@@ -444,11 +454,30 @@
         function togglePaginationField() {
             const mode = document.getElementById('paginationMode').value;
             const field = document.getElementById('pageParam');
+            const parallelGroup = document.getElementById('parallelGroup');
+            const concurrencyGroup = document.getElementById('concurrencyGroup');
+            
             if (mode === 'url') {
                 field.disabled = false;
                 field.focus();
+                if (parallelGroup) parallelGroup.style.display = 'block';
+                toggleParallelScrape();
             } else {
                 field.disabled = true;
+                if (parallelGroup) parallelGroup.style.display = 'none';
+                if (concurrencyGroup) concurrencyGroup.style.display = 'none';
+            }
+        }
+
+        function toggleParallelScrape() {
+            const isParallel = document.getElementById('parallelScrape').checked;
+            const concurrencyGroup = document.getElementById('concurrencyGroup');
+            const mode = document.getElementById('paginationMode').value;
+            
+            if (isParallel && mode === 'url') {
+                if (concurrencyGroup) concurrencyGroup.style.display = 'block';
+            } else {
+                if (concurrencyGroup) concurrencyGroup.style.display = 'none';
             }
         }
 
@@ -538,6 +567,8 @@
             const delay = document.getElementById('delayInput').value || 2000;
             const timeout = document.getElementById('timeoutInput').value || 30000;
             const blockResources = document.getElementById('blockResources').checked;
+            const parallelScrape = document.getElementById('parallelScrape').checked;
+            const concurrency = document.getElementById('concurrencyInput').value || 3;
 
             // Khởi tạo lại trạng thái
             mangDuLieuToanCuc = [];
@@ -569,7 +600,9 @@
                 maxPages,
                 delay,
                 timeout,
-                blockResources: blockResources ? 'true' : 'false'
+                blockResources: blockResources ? 'true' : 'false',
+                parallel: parallelScrape ? 'true' : 'false',
+                concurrency
             });
 
             eventSource = new EventSource(`/api/stream-scrape?${queryParams.toString()}`);
