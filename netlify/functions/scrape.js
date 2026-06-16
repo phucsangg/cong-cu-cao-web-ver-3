@@ -1,9 +1,10 @@
-const chromium = require('@sparticuz/chromium');
 const puppeteer = require('puppeteer-core');
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 exports.handler = async (event, context) => {
+    const chromiumModule = await import('@sparticuz/chromium');
+    const chromium = chromiumModule.default || chromiumModule;
     // Enable CORS
     const headers = {
         'Access-Control-Allow-Origin': '*',
