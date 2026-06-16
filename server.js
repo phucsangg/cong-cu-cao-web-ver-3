@@ -236,11 +236,16 @@ app.get('/api/stream-scrape', async (req, res) => {
                 // Lấy tất cả các thẻ trong trang
                 const tatCaThe = Array.from(document.querySelectorAll('*'));
                 
-                // Bộ lọc lấy các nút chứa giá tiền
+                // Bộ lọc lấy các nút chứa giá tiền, đảm bảo là phần tử sâu nhất chứa giá trị đó
                 const theChuaGia = tatCaThe.filter(el => {
-                    if (el.children.length > 0) return false; // Chỉ lấy thẻ lá cuối cùng
                     const text = el.innerText ? el.innerText.trim() : "";
-                    return checkIfPrice(text);
+                    if (!checkIfPrice(text)) return false;
+                    
+                    // Đảm bảo không có thẻ con nào của nó cũng chứa giá tiền (để lấy phần tử nhỏ nhất)
+                    const hasChildWithPrice = Array.from(el.children).some(child => {
+                        return checkIfPrice(child.innerText || "");
+                    });
+                    return !hasChildWithPrice;
                 });
 
                 theChuaGia.forEach(priceNode => {
