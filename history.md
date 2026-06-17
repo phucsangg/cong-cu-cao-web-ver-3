@@ -22,6 +22,8 @@
   - Redesigned and updated `extractSku` to use case-sensitive matching, list of excluded common words (e.g. gas, vùng, nấu, etc.), and immediate validation bypass for Hafele dotted codes, resolving inaccurate and false-positive extraction.
   - Added URL input mode switcher (Single manual URL vs .txt file upload containing a list of newline-separated URLs) to support bulk category crawling in a single execution.
   - Replaced collapsible accordion with an always-visible, beautifully styled glass advanced settings panel to improve UX.
+  - Added a Jaccard token-based similarity fuzzy matching algorithm (with a 60% threshold, excluding catalog stop words) to match and group products that do not have an extracted SKU/Series.
+  - Added a Price Comparison View ('So sánh' tab mode) that clusters products by SKU or Jaccard similarity and highlights the lowest ('Rẻ nhất') and highest ('Cao nhất') prices in real-time.
 - [test-fetch.mjs](file:///d:/Work/cong-cu-cao-web-ver-2/test-fetch.mjs):
   - Updated SKU/Series extraction testing logic to align with the frontend improvements.
 
@@ -56,6 +58,9 @@
 - `git push phucsang main`: Pushed final codebase with fixes to phucsang's repository.
 - `node test-fetch.mjs`: Verified updated SKU/Series extraction logic with real catalog data.
 - `npx netlify dev --port 8889 --staticServerPort 8890 --functions-port 4001`: Ran local server to verify TXT import loop crawling and new dashboard UI changes.
+- `git add public/index.html history.md`: Staged recent changes.
+- `git commit -m "feat: add support for importing list of URLs from TXT file and make advanced configuration panel always visible"`: Committed TXT import and advanced config panel.
+- `git push origin main` / `git push phucsang main`: Synchronized remotes with TXT import features.
 
 ## Bugs Found
 1. **Fallback Path Bypass on Local Dev (Windows)**: `@sparticuz/chromium` was imported and initialized on local Windows machines because the module is installed. `chromium.executablePath()` returned a folder/path that exists, so `fs.promises.access` succeeded, but running `puppeteer.launch` failed because it's not a valid Windows executable. This bypassed the local Chrome/Edge fallback search.

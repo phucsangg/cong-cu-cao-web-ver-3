@@ -510,6 +510,16 @@
             color: var(--text-light);
             margin-bottom: 3px;
         }
+
+        .bg-purple-custom {
+            background-color: rgba(139, 92, 246, 0.25) !important;
+        }
+        .text-purple-custom {
+            color: #c084fc !important;
+        }
+        .hover-primary:hover {
+            color: var(--primary-color) !important;
+        }
     </style>
 </head>
 <body>
@@ -700,6 +710,9 @@
                                 <button type="button" onclick="setCheDoXem('table')" id="btnViewTable" class="btn rounded-pill px-3 btn-view-mode">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="me-1"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>Bảng
                                 </button>
+                                <button type="button" onclick="setCheDoXem('compare')" id="btnViewCompare" class="btn rounded-pill px-3 btn-view-mode">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="me-1"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>So sánh
+                                </button>
                             </div>
                             
                             <!-- Export Dropdown -->
@@ -743,6 +756,13 @@
                         <div id="gridContainer" class="grid-view-container flex-grow-1 overflow-y-auto d-none" style="max-height: 480px; padding: 4px;">
                             <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-3" id="vungLuoi">
                                 <!-- Dynamic cards from SSE -->
+                            </div>
+                        </div>
+
+                        <!-- Comparison Wrapper -->
+                        <div id="compareContainer" class="compare-view-container flex-grow-1 overflow-y-auto d-none" style="max-height: 480px; padding: 4px;">
+                            <div class="row row-cols-1 g-3" id="vungSoSanh">
+                                <!-- Dynamic comparison cards -->
                             </div>
                         </div>
 
@@ -980,24 +1000,230 @@
             activeViewMode = mode;
             const btnGrid = document.getElementById('btnViewGrid');
             const btnTable = document.getElementById('btnViewTable');
+            const btnCompare = document.getElementById('btnViewCompare');
             const tableDiv = document.getElementById('tableContainer');
             const gridDiv = document.getElementById('gridContainer');
+            const compareDiv = document.getElementById('compareContainer');
+            
+            btnGrid.classList.remove('active');
+            btnTable.classList.remove('active');
+            btnCompare.classList.remove('active');
+            
+            tableDiv.classList.add('d-none');
+            gridDiv.classList.add('d-none');
+            compareDiv.classList.add('d-none');
             
             if (mode === 'grid') {
                 btnGrid.classList.add('active');
-                btnTable.classList.remove('active');
                 if (mangDuLieuToanCuc.length > 0) {
                     gridDiv.classList.remove('d-none');
-                    tableDiv.classList.add('d-none');
                 }
-            } else {
+            } else if (mode === 'table') {
                 btnTable.classList.add('active');
-                btnGrid.classList.remove('active');
                 if (mangDuLieuToanCuc.length > 0) {
                     tableDiv.classList.remove('d-none');
-                    gridDiv.classList.add('d-none');
                 }
+            } else if (mode === 'compare') {
+                btnCompare.classList.add('active');
+                if (mangDuLieuToanCuc.length > 0) {
+                    compareDiv.classList.remove('d-none');
+                }
+                renderSoSanh();
             }
+        }
+
+        function getComparisonTokens(name) {
+            const clean = name.toLowerCase()
+                .replace(/[^a-z0-9\sàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/g, '') // Keep Vietnamese characters
+                .trim();
+            const words = clean.split(/\s+/);
+            const stopWords = ['bếp', 'từ', 'điện', 'hồng', 'ngoại', 'máy', 'hút', 'mùi', 'lò', 'vi', 'sóng', 'nướng', 'rửa', 'chén', 'bát', 'âm', 'dương', 'nhập', 'khẩu', 'chính', 'hãng', 'giá', 'rẻ', 'đôi', 'ba', 'bốn', 'vùng', 'nấu', 'kính'];
+            return words.filter(w => w.length > 1 && !stopWords.includes(w));
+        }
+
+        function calculateJaccardSimilarity(arr1, arr2) {
+            if (arr1.length === 0 || arr2.length === 0) return 0;
+            const set1 = new Set(arr1);
+            const set2 = new Set(arr2);
+            
+            let intersectionSize = 0;
+            set1.forEach(item => {
+                if (set2.has(item)) intersectionSize++;
+            });
+            
+            const unionSize = set1.size + set2.size - intersectionSize;
+            return intersectionSize / unionSize;
+        }
+
+        function groupAndCompareProducts() {
+            const skuGroups = {};
+            const fuzzyGroups = [];
+            
+            mangDuLieuToanCuc.forEach(item => {
+                const numericPrice = parseInt(item.gia.replace(/\D/g, '')) || 0;
+                const itemWithPriceVal = { ...item, numericPrice };
+                
+                if (item.ma && item.ma.trim().length > 0) {
+                    const skuKey = item.ma.trim().toUpperCase();
+                    if (!skuGroups[skuKey]) {
+                        skuGroups[skuKey] = [];
+                    }
+                    skuGroups[skuKey].push(itemWithPriceVal);
+                } else {
+                    const tokens = getComparisonTokens(item.tenSạch);
+                    let matchedGroup = null;
+                    for (const group of fuzzyGroups) {
+                        const similarity = calculateJaccardSimilarity(tokens, group.tokens);
+                        if (similarity >= 0.6) {
+                            matchedGroup = group;
+                            break;
+                        }
+                    }
+                    
+                    if (matchedGroup) {
+                        matchedGroup.items.push(itemWithPriceVal);
+                    } else {
+                        fuzzyGroups.push({
+                            tokens: tokens,
+                            items: [itemWithPriceVal]
+                        });
+                    }
+                }
+            });
+            
+            const comparisonResults = [];
+            
+            Object.keys(skuGroups).forEach(sku => {
+                const items = skuGroups[sku];
+                items.sort((a, b) => a.numericPrice - b.numericPrice);
+                const validPriceItems = items.filter(x => x.numericPrice > 0);
+                
+                comparisonResults.push({
+                    type: 'sku',
+                    key: sku,
+                    name: items[0].tenSạch,
+                    series: items[0].series,
+                    items: items,
+                    minPriceItem: validPriceItems.length > 0 ? validPriceItems[0] : items[0],
+                    maxPriceItem: validPriceItems.length > 0 ? validPriceItems[validPriceItems.length - 1] : items[0]
+                });
+            });
+            
+            fuzzyGroups.forEach((group, index) => {
+                const items = group.items;
+                items.sort((a, b) => a.numericPrice - b.numericPrice);
+                const validPriceItems = items.filter(x => x.numericPrice > 0);
+                
+                comparisonResults.push({
+                    type: 'fuzzy',
+                    key: `Tương đồng tên #${index + 1}`,
+                    name: items[0].tenSạch,
+                    series: '',
+                    items: items,
+                    minPriceItem: validPriceItems.length > 0 ? validPriceItems[0] : items[0],
+                    maxPriceItem: validPriceItems.length > 0 ? validPriceItems[validPriceItems.length - 1] : items[0]
+                });
+            });
+            
+            return comparisonResults;
+        }
+
+        function renderSoSanh() {
+            const vungSoSanh = document.getElementById('vungSoSanh');
+            vungSoSanh.innerHTML = '';
+            
+            if (mangDuLieuToanCuc.length === 0) {
+                vungSoSanh.innerHTML = '<div class="col text-center py-5 text-muted">Chưa có dữ liệu sản phẩm để thực hiện so sánh. Hãy bắt đầu cào dữ liệu trước.</div>';
+                return;
+            }
+            
+            const results = groupAndCompareProducts();
+            
+            if (results.length === 0) {
+                vungSoSanh.innerHTML = '<div class="col text-center py-5 text-muted">Không tìm thấy nhóm sản phẩm nào đủ điều kiện so sánh.</div>';
+                return;
+            }
+            
+            results.sort((a, b) => b.items.length - a.items.length);
+            
+            results.forEach(group => {
+                const cardCol = document.createElement('div');
+                cardCol.className = 'col';
+                
+                let typeBadge = '';
+                if (group.type === 'sku') {
+                    const seriesStr = group.series ? ` <span class="badge bg-warning bg-opacity-20 text-warning ms-1 fw-bold">Series: ${group.series}</span>` : '';
+                    typeBadge = `<span class="badge bg-primary bg-opacity-20 text-info fw-bold">Mã SKU: ${group.key}</span>${seriesStr}`;
+                } else {
+                    typeBadge = `<span class="badge bg-purple-custom text-purple-custom fw-bold">🔍 So khớp tự động (Tên tương đồng)</span>`;
+                }
+                
+                let sourcesHtml = '';
+                const hasMultiple = group.items.length > 1;
+                
+                group.items.forEach(item => {
+                    let priceBadgeHtml = `<span class="price-badge">${item.gia}</span>`;
+                    let statusLabel = '';
+                    
+                    if (hasMultiple && item.numericPrice > 0) {
+                        if (item.numericPrice === group.minPriceItem.numericPrice) {
+                            priceBadgeHtml = `<span class="price-badge text-success">${item.gia}</span>`;
+                            statusLabel = `<span class="badge bg-success bg-opacity-25 text-success ms-2 fw-semibold" style="font-size: 0.7rem;">🏆 Rẻ Nhất</span>`;
+                        } else if (item.numericPrice === group.maxPriceItem.numericPrice) {
+                            priceBadgeHtml = `<span class="price-badge text-danger">${item.gia}</span>`;
+                            statusLabel = `<span class="badge bg-danger bg-opacity-25 text-danger ms-2 fw-semibold" style="font-size: 0.7rem;">📈 Cao Nhất</span>`;
+                        }
+                    }
+                    
+                    const itemLink = item.link 
+                        ? `<a href="${item.link}" target="_blank" class="text-white text-decoration-none hover-primary fw-medium" style="font-size: 0.82rem;">${item.ten}</a>`
+                        : `<span class="text-light fw-medium" style="font-size: 0.82rem;">${item.ten}</span>`;
+                        
+                    sourcesHtml += `
+                        <div class="d-flex justify-content-between align-items-center py-2 px-3 mb-2 rounded bg-dark bg-opacity-40 border border-white border-opacity-5">
+                            <div class="d-flex align-items-center gap-3 flex-grow-1" style="min-width: 0;">
+                                <span class="badge bg-secondary bg-opacity-30 text-light fw-normal" style="font-size: 0.7rem;">Trang ${item.trang}</span>
+                                <div class="text-truncate flex-grow-1">${itemLink}</div>
+                            </div>
+                            <div class="d-flex align-items-center gap-1 ms-3">
+                                ${priceBadgeHtml}
+                                ${statusLabel}
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                let diffBanner = '';
+                if (hasMultiple && group.minPriceItem.numericPrice > 0 && group.maxPriceItem.numericPrice > 0) {
+                    const saving = group.maxPriceItem.numericPrice - group.minPriceItem.numericPrice;
+                    if (saving > 0) {
+                        diffBanner = `
+                            <div class="mt-3 p-2 rounded text-center small fw-semibold bg-success bg-opacity-10 text-success border border-success border-opacity-20">
+                                💡 Chênh lệch giá lớn nhất: <strong>${saving.toLocaleString('vi-VN')} ₫</strong> - Hãy chọn bên rẻ nhất để tối ưu chi phí!
+                            </div>
+                        `;
+                    }
+                }
+                
+                cardCol.innerHTML = `
+                    <div class="card glass-card p-3 border-0 shadow-sm" style="background: rgba(20, 25, 45, 0.4);">
+                        <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-start gap-2 mb-3">
+                            <div>
+                                <h6 class="fw-bold text-white mb-1" style="font-size: 0.92rem;">${group.name}</h6>
+                                <div class="d-flex flex-wrap gap-1 mt-1">${typeBadge}</div>
+                            </div>
+                            <span class="badge bg-secondary bg-opacity-20 text-light small fw-normal">${group.items.length} nguồn</span>
+                        </div>
+                        
+                        <div class="sources-list">
+                            ${sourcesHtml}
+                        </div>
+                        
+                        ${diffBanner}
+                    </div>
+                `;
+                vungSoSanh.appendChild(cardCol);
+            });
         }
 
         function writeToConsole(message, level = 'info') {
@@ -1113,6 +1339,8 @@
             document.getElementById('emptyState').classList.remove('d-none');
             document.getElementById('tableContainer').classList.add('d-none');
             document.getElementById('gridContainer').classList.add('d-none');
+            document.getElementById('compareContainer').classList.add('d-none');
+            document.getElementById('vungSoSanh').innerHTML = '';
             
             // Thiết lập nút bấm và giao diện
             document.getElementById('btnStart').disabled = true;
@@ -1166,8 +1394,11 @@
             document.getElementById('emptyState').classList.add('d-none');
             if (activeViewMode === 'grid') {
                 document.getElementById('gridContainer').classList.remove('d-none');
-            } else {
+            } else if (activeViewMode === 'table') {
                 document.getElementById('tableContainer').classList.remove('d-none');
+            } else if (activeViewMode === 'compare') {
+                document.getElementById('compareContainer').classList.remove('d-none');
+                renderSoSanh();
             }
 
             // Table row
