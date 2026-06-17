@@ -20,6 +20,8 @@
   - Changed the early-exit condition to break the sequential page loop if a page yields 0 new items (`newCount === 0`) instead of `products.length === 0`. This stops useless repeated crawing of identical pages.
   - Cleaned up redundant early stop checks in frontend logic after merging remote `phucsang/main` changes.
   - Redesigned and updated `extractSku` to use case-sensitive matching, list of excluded common words (e.g. gas, vùng, nấu, etc.), and immediate validation bypass for Hafele dotted codes, resolving inaccurate and false-positive extraction.
+  - Added URL input mode switcher (Single manual URL vs .txt file upload containing a list of newline-separated URLs) to support bulk category crawling in a single execution.
+  - Replaced collapsible accordion with an always-visible, beautifully styled glass advanced settings panel to improve UX.
 - [test-fetch.mjs](file:///d:/Work/cong-cu-cao-web-ver-2/test-fetch.mjs):
   - Updated SKU/Series extraction testing logic to align with the frontend improvements.
 
@@ -53,6 +55,7 @@
 - `git merge phucsang/main`: Merged remote commits from phucsang/main into local main.
 - `git push phucsang main`: Pushed final codebase with fixes to phucsang's repository.
 - `node test-fetch.mjs`: Verified updated SKU/Series extraction logic with real catalog data.
+- `npx netlify dev --port 8889 --staticServerPort 8890 --functions-port 4001`: Ran local server to verify TXT import loop crawling and new dashboard UI changes.
 
 ## Bugs Found
 1. **Fallback Path Bypass on Local Dev (Windows)**: `@sparticuz/chromium` was imported and initialized on local Windows machines because the module is installed. `chromium.executablePath()` returned a folder/path that exists, so `fs.promises.access` succeeded, but running `puppeteer.launch` failed because it's not a valid Windows executable. This bypassed the local Chrome/Edge fallback search.
