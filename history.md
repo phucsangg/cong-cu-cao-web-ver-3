@@ -31,6 +31,9 @@
 - `git fetch phucsang`: Fetched updates from phucsang remote.
 - `git log HEAD..phucsang/main --oneline`: Evaluated incoming commits from the phucsang remote.
 - `git merge phucsang/main`: Fast-forwarded local branch to the latest remote state.
+- `git config --local user.email "phuquynguyen458@gmail.com"`: Configured local Git email.
+- `git config --local user.name "Wuys"`: Configured local Git name.
+- `git push origin main`: Pushed the merged commits to the origin remote.
 
 ## Bugs Found
 1. **Fallback Path Bypass on Local Dev (Windows)**: `@sparticuz/chromium` was imported and initialized on local Windows machines because the module is installed. `chromium.executablePath()` returned a folder/path that exists, so `fs.promises.access` succeeded, but running `puppeteer.launch` failed because it's not a valid Windows executable. This bypassed the local Chrome/Edge fallback search.
