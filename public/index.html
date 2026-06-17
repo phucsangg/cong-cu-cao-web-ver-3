@@ -517,6 +517,21 @@
         .text-purple-custom {
             color: #c084fc !important;
         }
+        .badge-sku {
+            background-color: rgba(6, 182, 212, 0.15) !important;
+            color: #22d3ee !important;
+            border: 1px solid rgba(6, 182, 212, 0.25) !important;
+        }
+        .badge-series {
+            background-color: rgba(245, 158, 11, 0.15) !important;
+            color: #fbbf24 !important;
+            border: 1px solid rgba(245, 158, 11, 0.25) !important;
+        }
+        .badge-auto {
+            background-color: rgba(139, 92, 246, 0.15) !important;
+            color: #c084fc !important;
+            border: 1px solid rgba(139, 92, 246, 0.25) !important;
+        }
         .hover-primary:hover {
             color: var(--primary-color) !important;
         }
@@ -1373,10 +1388,10 @@
                 
                 let typeBadge = '';
                 if (group.type === 'sku') {
-                    const seriesStr = group.series ? ` <span class="badge bg-warning bg-opacity-20 text-warning ms-1 fw-bold">Series: ${group.series}</span>` : '';
-                    typeBadge = `<span class="badge bg-primary bg-opacity-20 text-info fw-bold">Mã SKU: ${group.key}</span>${seriesStr}`;
+                    const seriesStr = group.series ? ` <span class="badge badge-series ms-1 fw-bold">Series: ${group.series}</span>` : '';
+                    typeBadge = `<span class="badge badge-sku fw-bold">Mã SKU: ${group.key}</span>${seriesStr}`;
                 } else {
-                    typeBadge = `<span class="badge bg-purple-custom text-purple-custom fw-bold">🔍 So khớp tự động (Tên tương đồng)</span>`;
+                    typeBadge = `<span class="badge badge-auto fw-bold">🔍 So khớp tự động (Tên tương đồng)</span>`;
                 }
                 
                 let sourcesHtml = '';
@@ -1704,10 +1719,10 @@
                 ? `<div class="product-title-cell"><a href="${prod.link}" target="_blank" class="product-link-btn fw-semibold">${prod.tenSạch}</a></div>`
                 : `<div class="product-title-cell text-light fw-semibold">${prod.tenSạch}</div>`;
             const maHtml = prod.ma 
-                ? `<span class="badge bg-primary bg-opacity-25 text-info fw-semibold">${prod.ma}</span>` 
+                ? `<span class="badge badge-sku fw-semibold">${prod.ma}</span>` 
                 : `<span class="text-muted small">-</span>`;
             const seriesHtml = prod.series 
-                ? `<span class="badge bg-warning bg-opacity-25 text-warning fw-semibold">${prod.series}</span>` 
+                ? `<span class="badge badge-series fw-semibold">${prod.series}</span>` 
                 : `<span class="text-muted small">-</span>`;
             row.innerHTML = `
                 <td class="text-center text-muted fw-bold">${prod.stt}</td>
@@ -1730,10 +1745,10 @@
                 ? `<a href="${prod.link}" target="_blank" class="product-card-title">${prod.tenSạch}</a>`
                 : `<div class="product-card-title">${prod.tenSạch}</div>`;
             const cardMaHtml = prod.ma 
-                ? `<span class="badge bg-primary bg-opacity-20 text-info fw-normal" style="font-size: 0.7rem;">${prod.ma}</span>`
+                ? `<span class="badge badge-sku fw-normal" style="font-size: 0.7rem;">${prod.ma}</span>`
                 : '';
             const cardSeriesHtml = prod.series 
-                ? `<span class="badge bg-warning bg-opacity-20 text-warning fw-normal ms-1" style="font-size: 0.7rem;">${prod.series}</span>`
+                ? `<span class="badge badge-series fw-normal ms-1" style="font-size: 0.7rem;">${prod.series}</span>`
                 : '';
             const badgesHtml = (cardMaHtml || cardSeriesHtml) 
                 ? `<div class="mb-2">${cardMaHtml}${cardSeriesHtml}</div>`

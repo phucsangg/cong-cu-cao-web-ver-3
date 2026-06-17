@@ -23,6 +23,7 @@
   - Ngăn so sánh giá các sản phẩm từ cùng một tên miền (domain).
   - Thêm cơ chế nhận diện combo/bộ sản phẩm và dừng quét khi trang không sinh thêm sản phẩm mới.
   - Bổ sung tùy chọn `autoScanCategories` ("Tự động tìm danh mục khi nhập trang chủ") và tích hợp logic tự động đẩy các danh mục con vào hàng đợi và chạy quét tuần tự ở phía client.
+  - Khắc phục lỗi tương phản màu chữ/màu nền trên các nhãn SKU và Series (chuyển sang các class CSS tùy chỉnh tự định nghĩa `.badge-sku`, `.badge-series` và `.badge-auto` để đảm bảo độ tương phản màu chữ sáng rõ trên nền tối/bán trong suốt).
 - [test-fetch.mjs](file:///d:/Work/cong-cu-cao-web-ver-2/test-fetch.mjs):
   - Cập nhật logic trích xuất SKU/Series độc lập đồng bộ với frontend để phục vụ kiểm thử.
 
