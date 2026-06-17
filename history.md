@@ -32,6 +32,9 @@
   - Added material filter rules to prevent steel specifications (such as INOX, SUS, SS304, etc.) from being incorrectly extracted as product SKUs.
   - Rewrote product comparison grouping rules to group strictly by SKU and Series.
   - Implemented name conflict detection (`hasConflict` heuristic) and added material/utensil stopWords in fuzzy matching to prevent incorrect grouping of different items (e.g. different sizes/types).
+  - Refined Pattern 2 regex matching boundary rules in `extractSku` to allow single-letter brand prefixes (e.g. `K-` in `K-10540`) while rejecting ASCII boundaries on Unicode letters (such as `4 s`).
+  - Added package quantity/combo signature detection (`getPackSignature`) to differentiate and separate single products from combos or packs containing multiple items or different sets.
+  - Hardcoded custom series suffix matching for generic 2-4 uppercase letter suffixes (like `MCB` or `PGR`) to prevent mismatched price comparisons.
 - [test-fetch.mjs](file:///d:/Work/cong-cu-cao-web-ver-2/test-fetch.mjs):
   - Updated SKU/Series extraction testing logic to align with the frontend improvements.
 
@@ -100,5 +103,29 @@
 10. **Layout Container Early Break**: Added `isLayoutContainer` check during parent traversal. It immediately breaks the loop when hitting multi-product layout elements (like rows, grids, lists, sections, main, or page body), keeping searches local to single-product cards and avoiding runaway calculations.
 11. **Refined SKU and Series Extraction**: Updated `extractSku` in `public/index.html` to use a strict case-sensitive regex for uppercase brand prefixes and model numbers. Introduced a comprehensive validator (`isValidSku` logic) to filter out common Vietnamese kitchen catalog words and general measurement units. Added an immediate bypass check for Hafele-style dotted codes, and improved hyphenated/slashed model group support.
 
+- [public/index.html](file:///d:/Work/cong-cu-cao-web-ver-2/public/index.html):
+  - Added space normalization in `extractSku` to merge spaces between numeric model prefixes and trailing letter suffixes safely (e.g. `CZ 52 IH` -> `CZ 52IH`).
+  - Updated `getPackSignature` to detect additional Vietnamese and English gift/bundle keywords (`tặng`, `tang`, `quà`, `qua`, `gift`, `kèm`, `kem`, `+`) to correctly separate bundled combos from bare items.
+  - Added robust string normalization (removing spaces, hyphens, and underscores) in `groupAndCompareProducts` when constructing `skuKey` comparison clusters.
+- [test-fetch.mjs](file:///d:/Work/cong-cu-cao-web-ver-2/test-fetch.mjs):
+  - Synced standalone `extractSku` implementation with the latest frontend version.
+
+## Deleted Files
+- None.
+
+## Commands Executed
+- `node test-fetch.mjs`: Verified SKU/Series extraction results on standard and edge case kitchen appliance titles.
+
+## Bugs Found
+1. **Model Number Space Inconsistencies**: Spacing variations like `CZ 52 IH` vs `CZ 52IH` or `CZ 52 I` vs `CZ 52I` prevented SKU comparison matches due to exact string key comparison.
+2. **Missing Gift/Bundle Detection**: Titles featuring gifts/bundles (`tặng nồi`, `kèm quà`, `+`) were incorrectly matches as single items because combo detection was restricted only to `combo`, `set`, and `bộ quà tặng`.
+3. **Unicode Word Boundary Interruptions**: Suffixes starting with uppercase letters followed by Unicode characters (e.g., `16 Món`) were sometimes incorrectly matched due to JavaScript's ASCII-only `\b` boundaries matching before Unicode characters (e.g. `M` in `Món`).
+
+## Fixes Applied
+1. **Space Normalization in SKU Matching**: Added a safe replacement regex in `extractSku` to join alphanumeric gaps (e.g. `52 IH` -> `52IH`), bypassing Vietnamese words using trailing letter checks.
+2. **Enriched Combo Signature Detection**: Expanded `getPackSignature` to identify gift/addon signatures, ensuring that bundles are grouped under distinct keys and compared separately from the base product.
+3. **Robust Comparison Group Keys**: Normalized comparison SKU and Series keys in `groupAndCompareProducts` by stripping all spaces, hyphens, and underscores before grouping.
+
 ## Remaining Issues
 - None.
+

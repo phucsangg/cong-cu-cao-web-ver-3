@@ -894,8 +894,17 @@
         const fallbackImgSrc = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iIzk0YTNCOCI+PHBhdGggZD0iTTIxIDE5VjVjMC0xLjEtLjktMi0yLTJINWMtMS4xIDAtMiAuOS0yIDJ2MTRjMCAxLjEuOSAyIDIgMmgxNGMxLjEgMCAyLS45IDItMnpNOC41IDEzLjVsMi41IDMuMDFMMTQuNSAxMmw0LjUgNkg1bDMuNS00LjV6Ii8+PC9zdmc+';
 
         function extractSku(fullName) {
+            // Space normalization for model numbers (e.g. 52 I -> 52I, 52 IH -> 52IH, 659 MCB -> 659MCB)
+            let cleanText = fullName.replace(/\b(\d+)\s+([A-Z]{1,4})/gi, (match, g1, g2, offset, str) => {
+                const nextChar = str[offset + match.length];
+                const letterRegex = /[a-zA-Zàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
+                if (nextChar && letterRegex.test(nextChar)) {
+                    return match;
+                }
+                return g1 + g2;
+            });
             // Clean price patterns like 9,480,000đ, 18.100.000 đ, etc.
-            let cleanText = fullName.replace(/\b\d+(?:[.,]\d{3})*\s*(?:đ|₫|VND|vnđ|vnd)/gi, '');
+            cleanText = cleanText.replace(/\b\d+(?:[.,]\d{3})*\s*(?:đ|₫|VND|vnđ|vnd)/gi, '');
             // Clean discount percentage like -48% or 48%
             cleanText = cleanText.replace(/[-+]\s*\d+\s*%/g, '');
             // Clean multiple spaces
@@ -911,9 +920,19 @@
             }
             
             // Pattern 2: Comprehensive alphanumeric model code matching (case-insensitive)
-            const modelReg = /\b(?:[A-Z]{2,4}[- _]?)?[A-Z_]*\d+[A-Z0-9_]*(?:[-/_][A-Z0-9_]+)*(?:[- ]?(?:PLUS|PRO|NOTE|KPLUS|EG|VN|EVN|IN|II|IG|Z|S|G))?\b/gi;
+            // Allowing 1-4 letter prefixes like K- in K-10540
+            const modelReg = /\b(?:[A-Z]{1,4}[- _]?)?[A-Z_]*\d+[A-Z0-9_]*(?:[-/_][A-Z0-9_]+)*(?:[- ]?(?:PLUS|PRO|NOTE|KPLUS|EG|VN|EVN|IN|II|IG|Z|S|G|[A-Z]{2,4}))?\b/gi;
             while ((match = modelReg.exec(cleanText)) !== null) {
-                codes.push(match[0]);
+                const matched = match[0];
+                const prevChar = match.index > 0 ? cleanText[match.index - 1] : '';
+                const nextChar = cleanText[match.index + matched.length];
+                const letterRegex = /[a-zA-Zàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
+                const isPrevLetter = prevChar && letterRegex.test(prevChar);
+                const isNextLetter = nextChar && letterRegex.test(nextChar);
+                
+                if (!isPrevLetter && !isNextLetter) {
+                    codes.push(matched);
+                }
             }
 
             let uniqueCodes = [...new Set(codes)];
@@ -934,6 +953,11 @@
                     return false;
                 }
                 if (/^(?:INOX|SUS)$/i.test(clean)) {
+                    return false;
+                }
+                
+                // Exclude package quantity multipliers like 'x 4', 'x4'
+                if (/^X\s*\d+$/i.test(clean)) {
                     return false;
                 }
                 
@@ -984,7 +1008,7 @@
             let baseSkus = [];
             let seriesSuffixes = [];
             
-            const suffixRegex = /\s*(EG\/KPLUS|EG|KPLUS|PLUS|Iplus|EVN|VN|IN|PRO|NOTE|II|IG|Z|S|G|Plus|Pro|Note|Kplus)$/i;
+            const suffixRegex = /\s*(EG\/KPLUS|EG|KPLUS|PLUS|Iplus|EVN|VN|IN|PRO|NOTE|II|IG|Z|S|G|Plus|Pro|Note|Kplus|[A-Z]{2,4})$/i;
             uniqueCodes.forEach(code => {
                 const matchSuffix = code.match(suffixRegex);
                 if (matchSuffix) {
@@ -1111,6 +1135,49 @@
             const skuGroups = {};
             const fuzzyGroups = [];
             
+            function getPackSignature(name) {
+                const clean = name.toLowerCase();
+                const signatures = [];
+                
+                if (clean.includes('combo')) {
+                    signatures.push('combo');
+                }
+                if (clean.includes('set ')) {
+                    signatures.push('set');
+                }
+                if (clean.includes('bộ quà tặng') || clean.includes('bo qua tang')) {
+                    signatures.push('bo_qua_tang');
+                }
+                if (clean.includes('tặng') || clean.includes('tang') || clean.includes('quà') || clean.includes('qua') || clean.includes('gift')) {
+                    signatures.push('gift');
+                }
+                if (clean.includes('kèm') || clean.includes('kem')) {
+                    signatures.push('with_attachment');
+                }
+                if (clean.includes('+')) {
+                    signatures.push('plus_bundle');
+                }
+
+                const comboReg = /\b(?:combo|set|tặng|tang|pack|bộ|bo)\s*(\d+)\b/gi;
+                let match;
+                while ((match = comboReg.exec(clean)) !== null) {
+                    signatures.push(`qty_${match[1]}`);
+                }
+
+                const monReg = /\b(\d+)\s*(?:món|mon|sp|sản phẩm|san pham|cái|cai|bếp|bep|nồi|noi|món quà|mon qua|quà|qua|gift)\b/gi;
+                while ((match = monReg.exec(clean)) !== null) {
+                    signatures.push(`size_${match[1]}`);
+                }
+
+                const xReg = /\bx\s*(\d+)\b/gi;
+                while ((match = xReg.exec(clean)) !== null) {
+                    signatures.push(`pack_${match[1]}`);
+                }
+
+                if (signatures.length === 0) return 'single';
+                return [...new Set(signatures)].sort().join('_');
+            }
+            
             function hasConflict(name1, name2) {
                 const n1 = name1.toLowerCase();
                 const n2 = name2.toLowerCase();
@@ -1138,9 +1205,14 @@
             mangDuLieuToanCuc.forEach(item => {
                 const numericPrice = parseInt(item.gia.replace(/\D/g, '')) || 0;
                 const itemWithPriceVal = { ...item, numericPrice };
+                const packSig = getPackSignature(item.ten);
                 
                 if (item.ma && item.ma.trim().length > 0) {
-                    const skuKey = item.ma.trim().toUpperCase() + (item.series ? `_${item.series.trim().toUpperCase()}` : '');
+                    // Group by SKU, Series AND Combo pack signature
+                    // Normalize the SKU and Series (remove spaces, hyphens, underscores) to match them robustly
+                    const normSku = item.ma.replace(/[- _]+/g, '').toUpperCase();
+                    const normSeries = item.series ? item.series.replace(/[- _]+/g, '').toUpperCase() : '';
+                    const skuKey = normSku + (normSeries ? `_${normSeries}` : '') + `_${packSig}`;
                     if (!skuGroups[skuKey]) {
                         skuGroups[skuKey] = [];
                     }
@@ -1150,7 +1222,7 @@
                     let matchedGroup = null;
                     for (const group of fuzzyGroups) {
                         const similarity = calculateJaccardSimilarity(tokens, group.tokens);
-                        if (similarity >= 0.8 && !hasConflict(item.tenSạch, group.name)) {
+                        if (similarity >= 0.8 && packSig === group.packSig && !hasConflict(item.tenSạch, group.name)) {
                             matchedGroup = group;
                             break;
                         }
@@ -1162,6 +1234,7 @@
                         fuzzyGroups.push({
                             tokens: tokens,
                             name: item.tenSạch,
+                            packSig: packSig,
                             items: [itemWithPriceVal]
                         });
                     }
