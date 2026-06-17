@@ -10,6 +10,7 @@
   - Tích hợp cơ chế cào dữ liệu bằng khoảng cách DOM (DOM Distance Proximity Matching) để ghép cặp giá tiền với tiêu đề/link sản phẩm gần nhất, tránh bị sai lệch chéo thông tin.
   - Giới hạn độ cao khi duyệt cây DOM bằng bộ lọc `isLayoutContainer` để tránh duyệt lên các container bố cục trang lớn, tránh quá tải CPU và sửa lỗi Timeout 502.
   - Tăng ngưỡng số lượng sản phẩm của Cheerio nhanh từ 3 lên 8 để tối ưu tốc độ cào.
+  - Tích hợp hàm helper `isHomepage` và `extractCategoryLinksCheerio` để tự động bóc tách các liên kết danh mục từ menu điều hướng khi truy cập trang chủ.
 - [netlify.toml](file:///d:/Work/cong-cu-cao-web-ver-2/netlify.toml):
   - Thêm cấu hình `functions = "netlify/functions"` trong khối `[build]` để giải quyết triệt để lỗi 404 API khi deploy.
 - [public/index.html](file:///d:/Work/cong-cu-cao-web-ver-2/public/index.html):
@@ -21,6 +22,7 @@
   - Tối ưu hóa bộ lọc từ khóa rác, loại bỏ các hậu tố màu sắc hoặc thông số kim loại để gom nhóm so sánh chính xác hơn.
   - Ngăn so sánh giá các sản phẩm từ cùng một tên miền (domain).
   - Thêm cơ chế nhận diện combo/bộ sản phẩm và dừng quét khi trang không sinh thêm sản phẩm mới.
+  - Bổ sung tùy chọn `autoScanCategories` ("Tự động tìm danh mục khi nhập trang chủ") và tích hợp logic tự động đẩy các danh mục con vào hàng đợi và chạy quét tuần tự ở phía client.
 - [test-fetch.mjs](file:///d:/Work/cong-cu-cao-web-ver-2/test-fetch.mjs):
   - Cập nhật logic trích xuất SKU/Series độc lập đồng bộ với frontend để phục vụ kiểm thử.
 
@@ -28,7 +30,7 @@
 - Không có.
 
 ## Các lệnh chính đã thực thi (Commands Executed)
-- Chạy thử nghiệm dev server local (`npx netlify dev`, `curl`).
+- Chạy thử nghiệm dev server local (`npx netlify dev --port 8889 --staticServerPort 8890 --functions-port 4001`).
 - Đồng bộ mã nguồn lên hai kho lưu trữ GitHub:
   - Repository cá nhân: `https://github.com/tomyrese/crawldata.git` (Remote: `origin`)
   - Repository gốc: `https://github.com/phucsangg/cong-cu-cao-web-ver-2.git` (Remote: `phucsang`)
@@ -47,6 +49,7 @@
 10. **Lỗi 502 Timeout khi tính khoảng cách DOM**: Duyệt lên quá cao khiến trình duyệt ảo bị đơ do quá tải tính toán.
 11. **Trích xuất SKU/Series sai lệch**: Nhận diện nhầm các từ khóa tiếng Việt (như "gas 3") hoặc bị tách nhỏ mã sản phẩm dài do RegEx thô sơ.
 12. **So sánh giá chéo lẫn lộn**: Nhóm các sản phẩm trên cùng một website để so sánh với nhau hoặc gom nhóm sai do lệch mã màu variants.
+13. **Không cào được sản phẩm từ link trang chủ thô**: Khi nhập link trang chủ (e.g. `kitchenstore.com.vn`), hệ thống chỉ lấy được sản phẩm nổi bật trên trang chủ, không tự động đi sâu vào danh mục sản phẩm con.
 
 ## Các bản vá đã áp dụng (Fixes Applied)
 1. Giới hạn `@sparticuz/chromium` chỉ chạy trên AWS Lambda, local dùng trình duyệt Chrome/Edge cài sẵn.
@@ -61,6 +64,7 @@
 10. Sử dụng bộ chặn `isLayoutContainer` giới hạn phạm vi tính khoảng cách DOM trong từng thẻ sản phẩm đơn lẻ.
 11. Nâng cấp RegEx trích xuất phân biệt chữ hoa-thường, bộ lọc từ cấm tiếng Việt và nhận diện mã Hafele.
 12. Lọc bỏ mã màu ở đuôi SKU, bỏ qua so sánh nội bộ cùng domain và tách biệt combo thông qua chữ "tặng", "+", "combo".
+13. Tích hợp bộ giải quyết điều phối tuần tự (sequential client-side queue) khi phát hiện trang chủ, kết hợp hàm bóc tách link danh mục (`extractCategoryLinksCheerio`) ở phía backend.
 
 ## Vấn đề còn lại (Remaining Issues)
 - Không có.

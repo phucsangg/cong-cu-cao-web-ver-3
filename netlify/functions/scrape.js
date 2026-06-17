@@ -3,6 +3,70 @@ const fs = require('fs');
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Helper to check if a URL is a homepage
+function isHomepage(urlStr) {
+    try {
+        const parsed = new URL(urlStr);
+        const path = parsed.pathname.toLowerCase();
+        return path === '/' || path === '' || path === '/index.html' || path === '/index.php' || path === '/index.htm';
+    } catch (e) {
+        return false;
+    }
+}
+
+// Helper to extract category links using Cheerio
+function extractCategoryLinksCheerio(html, baseUrl) {
+    const $ = cheerio.load(html);
+    const links = new Set();
+    let hostname = '';
+    try {
+        hostname = new URL(baseUrl).hostname;
+    } catch (e) {
+        return [];
+    }
+
+    $('nav a, .menu a, #menu a, [class*="menu"] a, .navigation a, [class*="nav"] a').each((i, el) => {
+        let href = $(el).attr('href');
+        if (!href) return;
+        href = href.trim();
+        if (href.startsWith('javascript:') || href.startsWith('#')) return;
+
+        let absoluteUrl = '';
+        try {
+            absoluteUrl = new URL(href, baseUrl).href;
+        } catch (e) {
+            return;
+        }
+
+        let parsedUrl;
+        try {
+            parsedUrl = new URL(absoluteUrl);
+        } catch (e) {
+            return;
+        }
+
+        if (parsedUrl.hostname !== hostname) return;
+
+        const path = parsedUrl.pathname.toLowerCase();
+        
+        // Exclude standard non-category pages
+        const exclusions = [
+            '/tin-tuc', '/lien-he', '/gioi-thieu', '/cart', '/checkout', '/login', 
+            '/register', '/account', '/search', '/tin-cong-nghe', '/chinh-sach',
+            '/huong-dan', '/tuyen-dung', '/show-room', '/bao-hanh', '/tra-gop'
+        ];
+        
+        if (path === '/' || path === '' || path === '/index.html' || path === '/index.php' || path === '/index.htm') return;
+        
+        if (exclusions.some(exc => path.includes(exc))) return;
+
+        links.add(absoluteUrl);
+    });
+
+    return Array.from(links);
+}
+
+
 // Helper to check if text is a valid price format
 function checkIfPrice(text) {
     text = text.trim().toLowerCase();
@@ -440,10 +504,14 @@ exports.handler = async (event, context) => {
             
             if (products.length >= 8) {
                 log(`Thành công! Tìm thấy ${products.length} sản phẩm (qua kênh cào nhanh Cheerio).`, 'success');
+                const responseBody = { products, logs };
+                if (isHomepage(targetUrl)) {
+                    responseBody.categoryLinks = extractCategoryLinksCheerio(html, targetUrl);
+                }
                 return {
                     statusCode: 200,
                     headers,
-                    body: JSON.stringify({ products, logs })
+                    body: JSON.stringify(responseBody)
                 };
             } else {
                 log(`Kênh cào nhanh tìm thấy ít sản phẩm (${products.length}). Chuyển sang trình duyệt ảo Puppeteer...`, 'warning');
@@ -857,10 +925,20 @@ exports.handler = async (event, context) => {
         const uniqueProducts = Array.from(uniqueMap.values());
         log(`Trình duyệt ảo hoàn thành. Tìm thấy ${uniqueProducts.length} sản phẩm.`, 'success');
 
+        const responseBody = { products: uniqueProducts, logs };
+        if (isHomepage(targetUrl)) {
+            try {
+                const html = await page.content();
+                responseBody.categoryLinks = extractCategoryLinksCheerio(html, targetUrl);
+            } catch (contentErr) {
+                log(`Không thể lấy HTML từ trình duyệt để trích xuất danh mục: ${contentErr.message}`, 'warning');
+            }
+        }
+
         return {
             statusCode: 200,
             headers,
-            body: JSON.stringify({ products: uniqueProducts, logs })
+            body: JSON.stringify(responseBody)
         };
 
     } catch (error) {

@@ -660,6 +660,12 @@
                                     <label class="form-check-label small text-light" for="blockResources" style="font-size: 0.72rem;">Chặn tải Ảnh & Tài nguyên rác</label>
                                 </div>
                             </div>
+                            <div class="col-12 mt-1">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input bg-success border-secondary" type="checkbox" id="autoScanCategories" checked>
+                                    <label class="form-check-label small text-light" for="autoScanCategories" style="font-size: 0.72rem;">Tự động tìm danh mục khi nhập trang chủ</label>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1543,6 +1549,7 @@
             const delay = parseInt(document.getElementById('delayInput').value) || 2000;
             const timeout = parseInt(document.getElementById('timeoutInput').value) || 30000;
             const blockResources = document.getElementById('blockResources').checked;
+            const autoScanCategories = document.getElementById('autoScanCategories').checked;
 
             // Khởi tạo lại trạng thái
             mangDuLieuToanCuc = [];
@@ -1601,7 +1608,17 @@
                         categoryIndex: i,
                         totalCategories: urlsToScrape.length
                     });
-                    if (result.hasError || result.productCount === 0) {
+                    
+                    if (result.categoryLinks && result.categoryLinks.length > 0 && autoScanCategories) {
+                        result.categoryLinks.forEach(link => {
+                            if (!urlsToScrape.includes(link)) {
+                                urlsToScrape.push(link);
+                            }
+                        });
+                        writeToConsole(`Đã thêm ${result.categoryLinks.length} danh mục tự động quét từ trang chủ vào hàng đợi.`, 'success');
+                    }
+
+                    if (result.hasError || (result.productCount === 0 && (!result.categoryLinks || result.categoryLinks.length === 0))) {
                         const reason = result.hasError ? result.errorReason : 'Không lấy được sản phẩm nào (có thể do sai cấu trúc hoặc trang trống)';
                         failedUrls.push({ url: currentUrl, reason });
                     }
@@ -1745,6 +1762,7 @@
             let categoryError = false;
             let errorReason = '';
             let totalProductsFromUrl = 0;
+            let categoryLinks = null;
 
             for (let p = 1; p <= maxPages; p++) {
                 if (!netlifyScrapingActive) {
@@ -1802,6 +1820,12 @@
                     totalProductsFromUrl += newCount;
                     writeToConsole(`Trang ${p}: trích xuất ${products.length} sản phẩm, ${newCount} mới (trùng: ${products.length - newCount}).`, 'success');
 
+                    if (data.categoryLinks && data.categoryLinks.length > 0) {
+                        categoryLinks = data.categoryLinks;
+                        writeToConsole(`Đã tìm thấy ${data.categoryLinks.length} liên kết danh mục từ trang chủ.`, 'success');
+                        break;
+                    }
+
                     // Nếu không cào thêm được sản phẩm mới nào ở trang này -> dừng cào sớm
                     if (newCount === 0) {
                         writeToConsole(`Không có thêm sản phẩm mới ở trang ${p} (trùng lặp hoàn toàn). Dừng cào sớm.`, 'warning');
@@ -1821,7 +1845,7 @@
                     await new Promise(r => setTimeout(r, delay));
                 }
             }
-            return { hasError: categoryError, productCount: totalProductsFromUrl, errorReason };
+            return { hasError: categoryError, productCount: totalProductsFromUrl, errorReason, categoryLinks };
         }
 
 
