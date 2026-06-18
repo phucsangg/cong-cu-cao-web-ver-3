@@ -1811,6 +1811,8 @@
             let errorReason = '';
             let totalProductsFromUrl = 0;
             let categoryLinks = null;
+            let consecutiveEmptyCount = 0;
+            const maxConsecutiveEmpty = 3;
 
             for (let p = 1; p <= maxPages; p++) {
                 if (!netlifyScrapingActive) {
@@ -1856,27 +1858,42 @@
 
                     const products = data.products || [];
                     let newCount = 0;
-                    products.forEach(sp => {
-                        const key = sp.link || sp.ten;
-                        if (!key || seenKeys.has(key)) return;
-                        seenKeys.add(key);
-                        globalIndex++;
-                        newCount++;
-                        addProduct({ ...sp, stt: globalIndex });
-                    });
 
-                    totalProductsFromUrl += newCount;
-                    writeToConsole(`Trang ${p}: trích xuất ${products.length} sản phẩm, ${newCount} mới (trùng: ${products.length - newCount}).`, 'success');
+                    if (products.length === 0) {
+                        consecutiveEmptyCount++;
+                        writeToConsole(`Trang ${p}: Không tìm thấy sản phẩm nào. (Trống liên tiếp: ${consecutiveEmptyCount}/${maxConsecutiveEmpty})`, 'warning');
+                        if (consecutiveEmptyCount >= maxConsecutiveEmpty) {
+                            writeToConsole(`Đã vượt quá giới hạn trang trống liên tiếp (${maxConsecutiveEmpty}). Dừng cào sớm.`, 'warning');
+                            break;
+                        }
+                    } else {
+                        products.forEach(sp => {
+                            const key = sp.link || sp.ten;
+                            if (!key || seenKeys.has(key)) return;
+                            seenKeys.add(key);
+                            globalIndex++;
+                            newCount++;
+                            addProduct({ ...sp, stt: globalIndex });
+                        });
+
+                        totalProductsFromUrl += newCount;
+                        writeToConsole(`Trang ${p}: Tìm thấy ${products.length} sản phẩm, ${newCount} sản phẩm mới.`, 'success');
+
+                        if (newCount === 0) {
+                            consecutiveEmptyCount++;
+                            writeToConsole(`Trang ${p}: Toàn bộ sản phẩm đều bị trùng lặp. (Trùng liên tiếp: ${consecutiveEmptyCount}/${maxConsecutiveEmpty})`, 'warning');
+                            if (consecutiveEmptyCount >= maxConsecutiveEmpty) {
+                                writeToConsole(`Đã vượt quá giới hạn trang trùng liên tiếp (${maxConsecutiveEmpty}). Dừng cào sớm.`, 'warning');
+                                break;
+                            }
+                        } else {
+                            consecutiveEmptyCount = 0;
+                        }
+                    }
 
                     if (data.categoryLinks && data.categoryLinks.length > 0) {
                         categoryLinks = data.categoryLinks;
                         writeToConsole(`Đã tìm thấy ${data.categoryLinks.length} liên kết danh mục từ trang chủ.`, 'success');
-                        break;
-                    }
-
-                    // Nếu không cào thêm được sản phẩm mới nào ở trang này -> dừng cào sớm
-                    if (newCount === 0) {
-                        writeToConsole(`Không có thêm sản phẩm mới ở trang ${p} (trùng lặp hoàn toàn). Dừng cào sớm.`, 'warning');
                         break;
                     }
 
