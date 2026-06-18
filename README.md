@@ -1,96 +1,190 @@
-# Công Cụ Cào và Trích Xuất Dữ Liệu Sản Phẩm Đa Trang Thời Gian Thực
+# 🔍 Công Cụ Cào & So Sánh Giá Sản Phẩm Đồ Bếp
 
-Một ứng dụng web dashboard hiện đại, mạnh mẽ được xây dựng bằng **Node.js (Express)** kết hợp với **Puppeteer** và **Server-Sent Events (SSE)**. Công cụ này hỗ trợ cào, lọc và trích xuất dữ liệu sản phẩm (tên, giá gốc, giá khuyến mãi, hình ảnh, liên kết) từ bất kỳ trang thương mại điện tử hoặc website giới thiệu sản phẩm nào dưới định dạng **CSV** và **JSON** trong thời gian thực.
+Một ứng dụng web dashboard hiện đại được xây dựng bằng **Node.js** kết hợp **Puppeteer**, **Cheerio** và **Netlify Functions**. Công cụ hỗ trợ cào, lọc, trích xuất dữ liệu sản phẩm và **so sánh giá tự động** với đối thủ cạnh tranh, xuất kết quả ra **CSV / JSON / Excel**.
 
 ---
 
-## ✨ Tính Năng Nổi Bật
+## ✨ Tính Năng
 
-- ⏱️ **Cập nhật dữ liệu thời gian thực (SSE):** Dữ liệu cào được đẩy trực tiếp về giao diện người dùng theo luồng sự kiện (Server-Sent Events) mà không cần reload trang hay lo bị ngắt kết nối giữa chừng (timeout).
-- 🧠 **Thuật toán tự động nhận diện giá (Smart Heuristics):** 
-  - Tự động lọc ra giá chính xác nhất (ưu tiên giá mới/giá khuyến mãi đã giảm).
-  - Tự động bỏ qua các phần tử giá cũ/giá gạch ngang hoặc văn bản gây nhiễu.
-  - Lọc bỏ các sản phẩm trùng lặp và giữ lại mức giá tối ưu nhất cho người dùng.
-- ⚡ **Tốc độ & Hiệu suất tối ưu:**
-  - **Chặn tài nguyên dư thừa:** Tự động chặn tải ảnh, fonts, và các mã theo dõi (Google Analytics, Facebook Pixel, Ads...) để tải trang nhanh gấp 3 lần và tiết kiệm băng thông.
-  - **Giả lập trình duyệt nâng cao:** Tự động tối ưu hóa viewport, thiết lập User-Agent ngẫu nhiên, cấu hình giảm tải RAM để tránh bị phát hiện/chặn IP (Anti-Bot bypass).
-- 📄 **Hỗ trợ phân trang đa dạng:** Hỗ trợ cả hai cơ chế phân trang phổ biến nhất hiện nay:
-  - Phân trang bằng cách nhấp chuột vào nút **Next Page** (Selector).
-  - Phân trang bằng cách thay đổi tham số trên **đường dẫn URL** (URL Parameter).
-- 📁 **Xuất báo cáo đa định dạng:** Xuất kết quả cào về file CSV hoặc JSON chỉ với một cú nhấp chuột.
-- 🎨 **Giao diện Glassmorphism cao cấp:** Giao diện tối hiện đại, sử dụng hiệu ứng kính mờ (Glassmorphism), biểu đồ trạng thái thời gian thực và tương thích hoàn toàn trên di động.
+### 🕷️ Dashboard Cào Dữ Liệu (Web UI)
+- **Cập nhật thời gian thực (SSE):** Dữ liệu cào được đẩy trực tiếp về giao diện qua Server-Sent Events, không cần reload trang.
+- **Tự động nhận diện giá thông minh:** Lọc giá chính xác nhất, ưu tiên giá khuyến mãi, bỏ qua giá gạch ngang và text gây nhiễu.
+- **Chống bot & tối ưu tốc độ:**
+  - Chặn tải ảnh, font, Google Analytics, Facebook Pixel, Ads để tăng tốc độ cào lên đến 3 lần.
+  - Giả lập User-Agent ngẫu nhiên, tối ưu viewport và RAM để tránh bị chặn IP.
+- **Hỗ trợ phân trang đa dạng:**
+  - Nhấp vào nút **Next Page** qua CSS Selector.
+  - Tăng tham số **URL** (ví dụ: `?page=2`).
+- **Xuất dữ liệu:** CSV và JSON chỉ với một cú nhấp chuột.
+
+### 📊 So Sánh CSV Trực Tiếp Trên Dashboard
+- Upload 2 file CSV lên giao diện web để so sánh tự động.
+- Hiển thị danh sách sản phẩm khớp, chênh lệch giá, và sản phẩm chỉ có ở một bên.
+- Xuất kết quả so sánh ra CSV ngay trên trình duyệt.
+
+### 🔁 CLI So Sánh Một Lần (`compare:once`)
+- Cào toàn bộ sản phẩm từ website của bạn.
+- Cào toàn bộ sản phẩm từ **bepngocbao.vn**.
+- Chuẩn hóa tên, giá, thương hiệu, SKU/model.
+- So khớp sản phẩm theo 4 lớp độ chính xác.
+- Xuất báo cáo đa sheet ra **Excel** và **CSV**.
 
 ---
 
 ## 🛠️ Yêu Cầu Hệ Thống
 
-Để chạy dự án này, máy tính của bạn cần được cài đặt sẵn:
-- **Node.js** (Phiên bản khuyến nghị: >= 16.x)
-- Trình duyệt Chrome/Chromium (Puppeteer sẽ tự động cấu hình sử dụng Chrome cài sẵn hoặc tải bản rút gọn).
+- **Node.js** >= 16.x
+- Trình duyệt **Google Chrome** đã cài đặt trên máy (Puppeteer dùng Chrome cài sẵn)
 
 ---
 
-## 🚀 Hướng Dẫn Cài Đặt & Chạy Dự Án
+## 🚀 Cài Đặt & Chạy
 
-### 1. Tải Mã Nguồn
-Nhân bản dự án từ GitHub:
+### 1. Clone Dự Án
+
 ```bash
-git clone https://github.com/phucsangg/cong-cu-cao-web.git
-cd cong-cu-cao-web
+git clone https://github.com/tomyrese/crawldata.git
+cd crawldata
 ```
 
-### 2. Cài Đặt Thư Viện
-Cài đặt toàn bộ các thư viện phụ thuộc bằng lệnh:
+### 2. Cài Thư Viện
+
 ```bash
 npm install
 ```
 
-### 3. Chạy Ứng Dụng
-Khởi động máy chủ ứng dụng:
+### 3. Chạy Dashboard Web
+
 ```bash
 npm start
 ```
 
-Sau khi chạy lệnh trên, hãy truy cập vào địa chỉ sau trên trình duyệt:
-👉 **[http://localhost:3000](http://localhost:3000)**
+Mở trình duyệt và truy cập: 👉 **[http://localhost:3000](http://localhost:3000)**
 
 ---
 
-## ⚙️ Cấu Hình Nâng Cao Trên Dashboard
+## ⚙️ Hướng Dẫn Sử Dụng Dashboard
 
-Giao diện cung cấp cho bạn nhiều tuỳ chọn linh hoạt để tinh chỉnh quá trình cào dữ liệu:
-1. **URL Nguồn:** Địa chỉ trang danh mục sản phẩm cần cào (ví dụ: `https://bepxanh.com/bep-tu.html`).
-2. **Cào đa trang:** Bật/Tắt chế độ tự động chuyển trang tiếp theo.
-3. **Số trang tối đa:** Giới hạn số lượng trang cần cào để tránh quá tải.
+### Cào Dữ Liệu Thủ Công
+1. **URL Nguồn:** Nhập địa chỉ trang danh mục cần cào (ví dụ: `https://bepxanh.com/bep-tu.html`).
+2. **Cào đa trang:** Bật/Tắt chế độ tự động chuyển trang.
+3. **Số trang tối đa:** Giới hạn số trang cào.
 4. **Cơ chế chuyển trang:**
-   - **Bấm nút chuyển tiếp:** Điền CSS selector của nút Next (ví dụ: `a.next`, `.paging-next`).
-   - **Tăng tham số URL:** Chỉ định tên biến trang trên URL (ví dụ: `page`, `p`).
-5. **Độ trễ Lazy-load (ms):** Thời gian chờ để trang tải hết nội dung hình ảnh/dữ liệu động khi cuộn chuột trước khi bắt đầu trích xuất.
-6. **Chặn ảnh & mã quảng cáo:** Tự động chặn tải tài nguyên phụ để tối ưu hóa tốc độ cào.
+   - **Bấm nút Next:** Điền CSS selector của nút chuyển trang (ví dụ: `a.next`, `.paging-next`).
+   - **Tăng tham số URL:** Điền tên biến trang (ví dụ: `page`, `p`).
+5. **Độ trễ Lazy-load (ms):** Thời gian chờ trang tải xong nội dung động.
+6. **Chặn ảnh & quảng cáo:** Tối ưu hóa tốc độ cào.
+
+### So Sánh 2 File CSV
+1. Chuyển sang tab **"So Sánh CSV"** trên dashboard.
+2. Upload file CSV của website bạn và file CSV đối thủ.
+3. Nhấn **"So Sánh"** để xem kết quả ngay lập tức.
+4. Xuất kết quả ra CSV nếu cần.
 
 ---
 
-## 📂 Cấu Trúc Thư Mục Dự Án
+## 🔁 CLI: So Sánh Giá Tự Động Một Lần
+
+### Bước 1: Nhập URL Danh Mục
+
+Tạo hoặc chỉnh file `input/my-site-urls.txt`, mỗi dòng là một URL danh mục:
+
+```txt
+https://website-cua-ban.vn/collections/all
+https://website-cua-ban.vn/collections/bep-tu
+https://website-cua-ban.vn/collections/may-hut-mui
+```
+
+### Bước 2: Chạy So Sánh
+
+```bash
+npm run compare:once
+```
+
+### Bước 3: Xem Báo Cáo
+
+Mở file Excel tại `reports/compare_result.xlsx`. Các sheet bao gồm:
+
+| Sheet | Nội dung |
+|---|---|
+| Tất cả so sánh | Toàn bộ sản phẩm khớp được |
+| Bên mình rẻ hơn | Sản phẩm bạn đang bán rẻ hơn đối thủ |
+| Bên mình đắt hơn | Sản phẩm bạn đang bán đắt hơn đối thủ |
+| Bằng giá | Sản phẩm cùng mức giá |
+| Thiếu bên mình | Đối thủ có nhưng bạn chưa có |
+| Thiếu Bếp Ngọc Bảo | Bạn có nhưng đối thủ chưa có |
+| So khớp nghi ngờ | Cần kiểm tra thủ công |
+
+---
+
+## 📊 Thuật Toán So Khớp Sản Phẩm
+
+So khớp theo 4 lớp độ ưu tiên:
+
+```
+Lớp 1: Cùng brand + cùng SKU/model       → Chắc chắn
+Lớp 2: Cùng SKU/model, một bên thiếu brand → Tương đối chắc
+Lớp 3: Jaccard similarity >= 86%          → Độ chính xác cao
+Lớp 4: Jaccard similarity 70% - 85%       → Nghi ngờ, cần kiểm tra
+```
+
+---
+
+## 📂 Cấu Trúc Dự Án
 
 ```text
 ├── public/
-│   └── index.html      # Giao diện chính của Dashboard (Glassmorphism UI)
-├── server.js           # Server chính (Express, Puppeteer logic, SSE API)
-├── Dockerfile          # Cấu hình đóng gói Docker container (hỗ trợ Render/Railway)
-├── .gitignore          # Cấu hình bỏ qua các tệp không cần thiết khi đẩy lên Git
-└── README.md           # Hướng dẫn sử dụng dự án (tệp này)
+│   └── index.html              # Dashboard Web UI (Glassmorphism)
+│
+├── netlify/
+│   └── functions/
+│       └── scrape.js           # Serverless API cào dữ liệu
+│
+├── lib/
+│   └── scraper-core.js         # Thư viện lõi (Cheerio + Puppeteer fallback)
+│
+├── scripts/
+│   ├── scrape-site.mjs         # CLI cào website của bạn
+│   ├── normalize-product.mjs   # Chuẩn hóa tên, giá, SKU
+│   ├── match-products.mjs      # So khớp sản phẩm
+│   ├── export-report.mjs       # Xuất báo cáo Excel/CSV
+│   └── compare-once.mjs        # Chạy toàn bộ quy trình một lần
+│
+├── input/
+│   └── my-site-urls.txt        # Danh sách URL danh mục cần cào
+│
+├── data/                       # Dữ liệu thô JSON (được tạo khi chạy)
+├── reports/                    # Báo cáo kết quả (được tạo khi chạy)
+│
+├── netlify.toml                # Cấu hình Netlify deploy
+├── package.json
+├── server.js                   # Server Express (dành cho chạy local)
+├── README.md                   # Tài liệu này
+└── README_COMPARE_ONCE.md      # Tài liệu chi tiết quy trình so sánh
 ```
 
 ---
 
-## 🐳 Triển Khai Với Docker
+## 📋 Các Lệnh Hữu Ích
 
-Nếu bạn muốn deploy ứng dụng lên các nền tảng đám mây như **Render** hoặc **Railway**, dự án đã được tích hợp sẵn cấu hình Docker chạy mượt mà cùng Puppeteer:
+| Lệnh | Mô tả |
+|---|---|
+| `npm start` | Chạy dashboard web tại localhost:3000 |
+| `npm run compare:once` | Chạy toàn bộ quy trình so sánh giá một lần |
+| `npm run scrape:site` | Chỉ cào website của bạn (không so sánh) |
+| `npm run check` | Kiểm tra cú pháp file scraper-core.js |
 
-```bash
-docker build -t fast-scraper-web .
-docker run -p 3000:3000 fast-scraper-web
-```
+---
+
+## 🌐 Triển Khai Lên Netlify
+
+Dự án đã được cấu hình sẵn để deploy lên **Netlify** với serverless functions:
+
+1. Push code lên GitHub.
+2. Kết nối repo với Netlify.
+3. Netlify tự động build và deploy theo `netlify.toml`.
+
+> ⚠️ Quy trình `compare:once` nên chạy trên **máy local** hoặc **VPS** vì Netlify Functions có giới hạn timeout 10 giây.
 
 ---
 
