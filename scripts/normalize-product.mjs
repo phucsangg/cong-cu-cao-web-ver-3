@@ -57,161 +57,156 @@ export function cleanNoiseWords(name) {
 /**
  * Extract model (SKU) and Series from name based on test-fetch.mjs implementation
  */
-export function extractSku(fullName) {
-    let cleanText = fullName;
+export function removeVietnameseTone(str = '') {
+    if (!str) return '';
+    return str
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[đĐ]/g, 'D');
+}
 
-    const letterRegexStr = 'a-zA-Zàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ';
-
-    // Space normalization for model numbers (e.g. 52 I -> 52I, 52 IH -> 52IH)
-    // ONLY if the letters are a standalone word to prevent merging prefixes of other words
-    const unitNormalizeReg = new RegExp('\\b(\\d+)\\s+([A-Z]{1,4})(?![' + letterRegexStr + '])', 'gi');
-    cleanText = cleanText.replace(unitNormalizeReg, '$1$2');
-
-    // Normalize space around hyphens in brand-model codes (e.g. KF - IH202IC -> KF-IH202IC)
-    const brandNormalizeReg = new RegExp('(?<![-A-Z0-9_])([A-Z]{2,4})\\s*-\\s*([A-Z0-9]+)(?![' + letterRegexStr + '])', 'gi');
-    cleanText = cleanText.replace(brandNormalizeReg, '$1-$2');
-
-    cleanText = cleanText.replace(/\b\d+(?:[.,]\d{3})*\s*(?:đ|₫|VND|vnđ|vnd)/gi, '');
-    cleanText = cleanText.replace(/[-+]\s*\d+\s*%/g, '');
-    cleanText = cleanText.replace(/\s+/g, ' ').trim();
-
-    let codes = [];
-    const dotReg = /\b\d{3}\.\d{2}\.\d{3}\b/g;
-    let match;
-    while ((match = dotReg.exec(cleanText)) !== null) {
-        codes.push(match[0]);
+export function getSlug(link = '') {
+    try {
+        const url = new URL(link);
+        return decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || '');
+    } catch {
+        return '';
     }
+}
+
+export function cleanText(str = '') {
+    return removeVietnameseTone(str)
+        .replace(/[×–—]/g, ' ')
+        .replace(/[_/]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+export function extractSeries(text) {
+    const m = cleanText(text).match(/\b(?:series|serie|seri)\s*(\d+)\b/i);
+    return m ? m[1] : null;
+}
+
+export function extractSize(text) {
+    const m = cleanText(text).match(/\b\d+(?:[.,]\d+)?\s*(?:cm|mm|l|lit|lít|w|kw|kg|g)\b/i);
+    return m ? m[0].replace(/\s+/g, '').toUpperCase() : null;
+}
+
+export function stripNonCodeInfo(text) {
+    return cleanText(text)
+        .replace(/\b(?:series|serie|seri)\s*\d+\b/gi, ' ')
+        .replace(/\b\d+(?:[.,]\d+)?\s*(?:cm|mm|l|lit|lít|w|kw|kg|g)\b/gi, ' ')
+        .replace(/\b\d+\s*(?:bộ|bo|món|mon|lớp|lop|năm|nam)\b/gi, ' ')
+        .replace(/\bAISI\s*304\b/gi, ' ')
+        .replace(/\bPVD\s*\d+\b/gi, ' ')
+        .replace(/\b\d{2,4}\s*[x×]\s*\d{2,4}\b/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+export function scoreCode(code, fullText) {
+    const c = code.toUpperCase();
+    let score = 0;
+
+    if (/[A-Z]/.test(c) && /\d/.test(c)) score += 5;
+    if (c.length >= 6) score += 3;
+    if (/[-_.]/.test(c)) score += 2;
     
-    // Alphanumeric code matching: strictly no raw spaces inside model code
-    // Prefix cannot contain space to prevent greedy shadowing of letters from preceding words
-    const modelReg = /\b(?:[A-Z]{1,4}[-_]?)?[A-Z_]*\d+[A-Z0-9_]*(?:[-/][A-Z0-9_]+)*(?:[- ]?(?:PLUS|PRO|NOTE|KPLUS|EG|VN|EVN|IN|II|IG|Z|S|G))?\b/gi;
-    while ((match = modelReg.exec(cleanText)) !== null) {
-        const matched = match[0];
-        const prevChar = match.index > 0 ? cleanText[match.index - 1] : '';
-        const nextChar = cleanText[match.index + matched.length];
-        
-        // Accurate unicode check for letter boundaries to avoid accent bugs
-        const letterRegex = /[a-zA-Zàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
-        const isPrevLetter = prevChar && letterRegex.test(prevChar);
-        const isNextLetter = nextChar && letterRegex.test(nextChar);
-        
-        if (!isPrevLetter && !isNextLetter) {
-            let cleanedCode = matched;
-            const excludedWords = [
-                'GAS', 'VÙNG', 'VUNG', 'NẤU', 'NAU', 'LÍT', 'LIT', 'TỪ', 'TU', 'ĐÔI', 'DOI',
-                'HỒNG', 'NGOẠI', 'LÒ', 'HÚT', 'MÙI', 'MÁY', 'RỬA', 'BÁT', 'CHÉN', 'KÍNH',
-                'ÂM', 'DƯƠNG', 'NHẬP', 'KHẨU', 'ĐỨC', 'DUC', 'TÂY', 'BAN', 'NHA', 'THÁI', 'LAN', 'THAI',
-                'MALAYSIA', 'HÀNG', 'CHÍNH', 'HÃNG', 'GIA', 'GIÁ', 'RẺ', 'RE', 'TẶNG', 'TANG', 'QUÀ', 'QUA',
-                'KHUYẾN', 'KHUYEN', 'MÃI', 'MAI', 'HOT', 'NEW', 'MODEL', 'BẾP', 'BEP', 'ĐIỆN', 'DIEN',
-                'VÙNG NẤU', 'VUNG NAU', 'KÍNH ÂM', 'KINH AM', 'NHẬP KHẨU', 'NHAP KHAU', 'CHÍNH HÃNG', 'CHINH HANG',
-                'TRANG', 'MS', 'VV', 'GB', 'TB', 'MB', 'VÒNG', 'VONG', 'LÍT/PHÚT', 'LIT/PHUT', 'MÉT', 'MET',
-                'INOX', 'PHI', 'PHÍ', 'ĐỘ', 'DO', 'NĂM', 'NAM', 'KÍCH', 'KICH', 'THÁNG', 'THANG', 'BẢO', 'HÀNH', 
-                'BAO', 'HANH', 'BH', 'ĐỨNG', 'DUNG', 'NẰM', 'ĐẦU', 'DAU', 'LỖ', 'LO', 'BỘ', 'BO', 'CÁNH', 'CANH', 
-                'KHE', 'KHAY', 'MÂM', 'MAM', 'CHẬU', 'CHAU', 'VÒI', 'VOI', 'RỔ', 'RO', 'KỆ', 'KE', 'ĐÁ', 'DA', 
-                'CẮT', 'CAT', 'MẶT', 'MAT', 'DÀY', 'DAY', 'RỘNG', 'RONG', 'CAO', 'SÂU', 'SAU', 'THÀNH', 'THANH', 
-                'PHÂN', 'PHAN', 'LI', 'LY', 'CHÂN', 'CHAN', 'ỐNG', 'ONG', 'KHOÁ', 'KHOA', 'CỬA', 'CUA', 'HỐ', 
-                'HO', 'CHỔI', 'CHOI', 'DÂY', 'DAY'
-            ];
-            const lastWordMatch = matched.match(/[- ]([A-Z]{2,4})$/i);
-            if (lastWordMatch) {
-                const lastWord = lastWordMatch[1].toUpperCase();
-                if (excludedWords.includes(lastWord)) {
-                    cleanedCode = matched.substring(0, matched.length - lastWordMatch[0].length).trim();
-                }
-            }
-            codes.push(cleanedCode);
-        }
+    const escaped = c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const occurrences = (fullText.match(new RegExp(escaped, 'gi')) || []).length;
+    if (occurrences > 1) {
+        score += 2;
     }
 
-    let uniqueCodes = [...new Set(codes)];
-    
-    uniqueCodes = uniqueCodes.filter(code => {
-        const clean = code.trim().toUpperCase();
-        if (clean.length < 3) return false;
-        if (/^\d{3}\.\d{2}\.\d{3}$/.test(clean)) return true;
-        if (!/[A-Z]/.test(clean) || !/\d/.test(clean)) return false;
-        if (/(?:INOX|SUS|SS304|SS201|SS316|SS430|S304|S201|S316|S430)/i.test(clean)) return false;
-        if (/^(?:INOX|SUS)$/i.test(clean)) return false;
-        if (/^X\s*\d+$/i.test(clean)) return false;
-        const excludedWords = [
-            'GAS', 'VÙNG', 'VUNG', 'NẤU', 'NAU', 'LÍT', 'LIT', 'TỪ', 'TU', 'ĐÔI', 'DOI',
-            'HỒNG', 'NGOẠI', 'LÒ', 'HÚT', 'MÙI', 'MÁY', 'RỬA', 'BÁT', 'CHÉN', 'KÍNH',
-            'ÂM', 'DƯƠNG', 'NHẬP', 'KHẨU', 'ĐỨC', 'DUC', 'TÂY', 'BAN', 'NHA', 'THÁI', 'LAN', 'THAI',
-            'MALAYSIA', 'HÀNG', 'CHÍNH', 'HÃNG', 'GIA', 'GIÁ', 'RẺ', 'RE', 'TẶNG', 'TANG', 'QUÀ', 'QUA',
-            'KHUYẾN', 'KHUYEN', 'MÃI', 'MAI', 'HOT', 'NEW', 'MODEL', 'BẾP', 'BEP', 'ĐIỆN', 'DIEN',
-            'VÙNG NẤU', 'VUNG NAU', 'KÍNH ÂM', 'KINH AM', 'NHẬP KHẨU', 'NHAP KHAU', 'CHÍNH HÃNG', 'CHINH HANG',
-            'TRANG', 'MS', 'VV', 'GB', 'TB', 'MB', 'VÒNG', 'VONG', 'LÍT/PHÚT', 'LIT/PHUT', 'MÉT', 'MET',
-            'INOX', 'PHI', 'PHÍ', 'ĐỘ', 'DO', 'NĂM', 'NAM', 'KÍCH', 'KICH', 'THÁNG', 'THANG', 'BẢO', 'HÀNH', 
-            'BAO', 'HANH', 'BH', 'ĐỨNG', 'DUNG', 'NẰM', 'ĐẦU', 'DAU', 'LỖ', 'LO', 'BỘ', 'BO', 'CÁNH', 'CANH', 
-            'KHE', 'KHAY', 'MÂM', 'MAM', 'CHẬU', 'CHAU', 'VÒI', 'VOI', 'RỔ', 'RO', 'KỆ', 'KE', 'ĐÁ', 'DA', 
-            'CẮT', 'CAT', 'MẶT', 'MAT', 'DÀY', 'DAY', 'RỘNG', 'RONG', 'CAO', 'SÂU', 'SAU', 'THÀNH', 'THANH', 
-            'PHÂN', 'PHAN', 'LI', 'LY', 'CHÂN', 'CHAN', 'ỐNG', 'ONG', 'KHOÁ', 'KHOA', 'CỬA', 'CUA', 'HỐ', 
-            'HO', 'CHỔI', 'CHOI', 'DÂY', 'DAY'
-        ];
-        if (excludedWords.includes(clean)) return false;
-        const parts = clean.split(/[- ]+/);
-        for (const part of parts) {
-            if (excludedWords.includes(part) && !/\d/.test(part)) return false;
-        }
-        
-        // Exclude units (added CM and MM)
-        const isUnit = /^\d+(?:W|V|HZ|L|KG|PHUT|THANG|TRANG|MS|S|H|N|VN|TB|GB|MB|VÙNG|VUNG|VÒNG|VONG|CM|MM)$/i.test(clean);
-        if (isUnit) return false;
-        
-        const isDimension = /^\d+\s*[xX]\s*\d+(?:\s*[xX]\s*\d+)*$/i.test(clean);
-        if (isDimension) return false;
-        return true;
-    });
+    // Trừ điểm các thứ dễ là thông số
+    if (/^\d+$/.test(c)) score -= 10;
+    if (/^\d+(CM|MM|L|W|KG|G)$/i.test(c)) score -= 10;
+    if (/^(PVD|AISI|SERIES|SERI|SERIE)/i.test(c)) score -= 10;
 
-    uniqueCodes = uniqueCodes.filter(c => {
-        return !uniqueCodes.some(other => other !== c && other.toLowerCase().includes(c.toLowerCase()));
-    });
-    
-    let cleanName = cleanText;
-    uniqueCodes.forEach(code => {
-        const escapedCode = code.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-        const reg = new RegExp(escapedCode, 'gi');
-        cleanName = cleanName.replace(reg, '');
-    });
-    
-    cleanName = cleanName.replace(/\s*-\s*$/, '').replace(/^\s*-\s*/, '').replace(/\s+/g, ' ').trim();
-    cleanName = cleanName.replace(/\/+\s*$/, '').replace(/^\s*\/+/, '').replace(/\s+/g, ' ').trim();
-    
-    // Extract Bosch/general series from title
-    let seriesFromTitle = null;
-    const seriesTitleRegex = /(?:SERIES|SERIE|SERI)\s*(\d+)/i;
-    const matchSeriesTitle = fullName.match(seriesTitleRegex);
-    if (matchSeriesTitle) {
-        seriesFromTitle = matchSeriesTitle[0].trim();
+    return score;
+}
+
+export function extractModelInfo(name = '', link = '') {
+    const slug = getSlug(link);
+    const rawText = `${name} ${slug.replace(/-/g, ' ')}`;
+    const normalized = cleanText(rawText).toUpperCase();
+
+    const series = extractSeries(rawText);
+    const size = extractSize(rawText);
+
+    let candidates = [];
+
+    // Rule đặc biệt cho KAFF: slug kiểu kaffkf-ih202ic => KF-IH202IC
+    const kaff = slug.match(/kaffkf-?([a-z0-9]+)/i);
+    if (kaff) candidates.push(`KF-${kaff[1].toUpperCase()}`);
+
+    // Rule cho Konox chậu/vòi dạng Vigo 860, Stelo 780U, Neron 600T
+    const konox = normalized.match(/\b(VIGO|STELO|NERON|TARI(?: SMART)?|MEKONG|DIAMOND)\s+(\d{3,4}[A-Z]?)\b/i);
+    if (konox) candidates.push(`${konox[1]} ${konox[2]}`.toUpperCase());
+
+    const textForCode = stripNonCodeInfo(rawText).toUpperCase();
+
+    const codePatterns = [
+        /\b\d{3}[._-]\d{2}[._-]\d{3}\b/gi,
+        /\b[A-Z]{1,5}[-_]\d[A-Z0-9]{2,}\b/gi,
+        /\b[A-Z]{2,}\d[A-Z0-9]{2,}\b/gi,
+        /\b[A-Z]\d[A-Z0-9]{2,}\b/gi
+    ];
+
+    for (const re of codePatterns) {
+        const found = textForCode.match(re) || [];
+        candidates.push(...found);
     }
 
-    let baseSkus = [];
-    let seriesSuffixes = [];
-    
-    // Clean country code suffixes from split list so e.g. WQG24200SG remains intact as SKU
-    const suffixRegex = /\s*(EG\/KPLUS|EG|KPLUS|PLUS|Iplus|PRO|NOTE|Kplus)$/i;
-    uniqueCodes.forEach(code => {
-        const matchSuffix = code.match(suffixRegex);
-        if (matchSuffix) {
-            const series = matchSuffix[1].toUpperCase();
-            const rawBase = code.substring(0, code.length - matchSuffix[0].length);
-            const baseSku = rawBase.replace(/[- ]+$/, '').trim();
-            baseSkus.push(baseSku);
-            seriesSuffixes.push(series);
-        } else {
-            baseSkus.push(code);
-        }
-    });
+    candidates = [...new Set(
+        candidates
+            .map(x => x.replace(/[._]/g, '.').replace(/\s+/g, ' ').trim().toUpperCase())
+            .filter(Boolean)
+    )];
 
-    let finalSeries = seriesFromTitle || '';
-    if (seriesSuffixes.length > 0) {
-        const joinedSuffixes = [...new Set(seriesSuffixes)].join(' / ');
-        finalSeries = finalSeries ? `${finalSeries} (${joinedSuffixes})` : joinedSuffixes;
-    }
+    const ranked = candidates
+        .map(code => ({ code, score: scoreCode(code, normalized) }))
+        .filter(x => x.score >= 5)
+        .sort((a, b) => b.score - a.score);
 
     return {
-        sku: baseSkus.join(' / '),
-        series: finalSeries || null,
+        maSanPham: ranked[0]?.code || null,
+        series,
+        kichThuoc: size
+    };
+}
+
+export function getCleanName(fullName, maSanPham, series, kichThuoc) {
+    let clean = fullName;
+    if (maSanPham) {
+        const escaped = maSanPham.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        clean = clean.replace(new RegExp(escaped, 'gi'), '');
+        
+        const parts = maSanPham.split(/\s+/);
+        if (parts.length > 1) {
+            const pattern = parts.join('\\s*[-_]?\\s*');
+            clean = clean.replace(new RegExp(pattern, 'gi'), '');
+        }
+    }
+    
+    clean = clean.replace(/\b(?:series|serie|seri)\s*\d+\b/gi, '');
+    clean = clean.replace(/\b\d+(?:[.,]\d+)?\s*(?:cm|mm|l|lit|lít|w|kw|kg|g)\b/gi, '');
+    clean = clean.replace(/\b(?:AISI\s*304|PVD\s*\d+|lớp)\b/gi, '');
+
+    clean = clean.replace(/[\[\]|,\-+()]/g, ' ');
+    clean = clean.replace(/\s+/g, ' ').trim();
+    clean = clean.replace(/\s*-\s*$/, '').replace(/^\s*-\s*/, '');
+    clean = clean.replace(/\/+\s*$/, '').replace(/^\s*\/+/, '');
+    return clean.trim();
+}
+
+export function extractSku(fullName, link = '') {
+    const info = extractModelInfo(fullName, link);
+    const cleanName = getCleanName(fullName, info.maSanPham, info.series, info.kichThuoc);
+    return {
+        sku: info.maSanPham,
+        series: info.series,
+        kichThuoc: info.kichThuoc,
         cleanName: cleanName
     };
 }
@@ -300,7 +295,7 @@ export function parsePrice(giaStr, nameStr) {
  */
 export function normalizeProduct(rawProd) {
     const rawTitle = rawProd.ten || '';
-    const skuInfo = extractSku(rawTitle);
+    const skuInfo = extractSku(rawTitle, rawProd.link || '');
     
     // Clean name further from noise and models
     let cleanTitle = skuInfo.cleanName;
@@ -314,6 +309,7 @@ export function normalizeProduct(rawProd) {
         cleanTitle: cleanTitle,
         model: skuInfo.sku || null,
         series: skuInfo.series || null,
+        kichThuoc: skuInfo.kichThuoc || null,
         brand: brand,
         price: priceInfo.price,
         originalPrice: priceInfo.originalPrice,

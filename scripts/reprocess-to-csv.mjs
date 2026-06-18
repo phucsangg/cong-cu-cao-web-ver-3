@@ -11,7 +11,7 @@ if (!fs.existsSync(rawCachePath)) {
 const rawProducts = JSON.parse(fs.readFileSync(rawCachePath, 'utf-8'));
 console.log(`Reprocessing ${rawProducts.length} raw products...`);
 
-const headers = ['STT', 'Ten San Pham', 'Ma San Pham', 'Dong / Series', 'Gia Ban', 'Nguon Trang', 'Lien Ket San Pham', 'Link Anh'];
+const headers = ['STT', 'Ten San Pham', 'Ma San Pham', 'Dong / Series', 'Kich Thuoc', 'Gia Ban', 'Nguon Trang', 'Lien Ket San Pham', 'Link Anh'];
 
 // Helper to escape CSV values correctly
 function escapeCsv(val) {
@@ -25,7 +25,7 @@ csvLines.push(headers.join(','));
 
 rawProducts.forEach((p, index) => {
     // 1. Run extraction logic
-    const ext = extractSku(p.ten);
+    const ext = extractSku(p.ten, p.link);
     
     // 2. Format price - Bếp Ngọc Bảo has a price string already, but let's parse and format it nicely
     // If the price is a number in cache, format it. Let's look at the price field format in raw cache.
@@ -71,6 +71,7 @@ rawProducts.forEach((p, index) => {
         escapeCsv(ext.cleanName),
         escapeCsv(ext.sku),
         escapeCsv(ext.series),
+        escapeCsv(ext.kichThuoc),
         escapeCsv(giaText),
         escapeCsv(nguonTrang),
         escapeCsv(p.link || ''),

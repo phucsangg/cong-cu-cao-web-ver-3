@@ -530,6 +530,11 @@
             color: #fbbf24 !important;
             border: 1px solid rgba(245, 158, 11, 0.25) !important;
         }
+        .badge-size {
+            background-color: rgba(16, 185, 129, 0.15) !important;
+            color: #34d399 !important;
+            border: 1px solid rgba(16, 185, 129, 0.25) !important;
+        }
         .badge-auto {
             background-color: rgba(139, 92, 246, 0.15) !important;
             color: #c084fc !important;
@@ -785,6 +790,7 @@
                                         <th style="min-width: 250px;">Tên Sản Phẩm</th>
                                         <th style="width: 120px;">Mã Sản Phẩm</th>
                                         <th style="width: 100px;">Dòng / Series</th>
+                                        <th style="width: 100px;">Kích thước</th>
                                         <th style="width: 110px;" class="text-center">Giá Bán</th>
                                         <th style="width: 85px;" class="text-center">Nguồn</th>
                                     </tr>
@@ -917,190 +923,156 @@
 
         const fallbackImgSrc = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iIzk0YTNCOCI+PHBhdGggZD0iTTIxIDE5VjVjMC0xLjEtLjktMi0yLTJINWMtMS4xIDAtMiAuOS0yIDJ2MTRjMCAxLjEuOSAyIDIgMmgxNGMxLjEgMCAyLS45IDItMnpNOC41IDEzLjVsMi41IDMuMDFMMTQuNSAxMmw0LjUgNkg1bDMuNS00LjV6Ii8+PC9zdmc+';
 
-        function extractSku(fullName) {
-            let cleanText = fullName;
+        function removeVietnameseTone(str = '') {
+            if (!str) return '';
+            return str
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/[đĐ]/g, 'D');
+        }
 
-            const letterRegexStr = 'a-zA-Zàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ';
-
-            // Space normalization for model numbers (e.g. 52 I -> 52I, 52 IH -> 52IH)
-            // ONLY if the letters are a standalone word to prevent merging prefixes of other words
-            const unitNormalizeReg = new RegExp('\\b(\\d+)\\s+([A-Z]{1,4})(?![' + letterRegexStr + '])', 'gi');
-            cleanText = cleanText.replace(unitNormalizeReg, '$1$2');
-
-            // Normalize space around hyphens in brand-model codes (e.g. KF - IH202IC -> KF-IH202IC)
-            const brandNormalizeReg = new RegExp('(?<![-A-Z0-9_])([A-Z]{2,4})\\s*-\\s*([A-Z0-9]+)(?![' + letterRegexStr + '])', 'gi');
-            cleanText = cleanText.replace(brandNormalizeReg, '$1-$2');
-            
-            // Clean price patterns like 9,480,000đ, 18.100.000 đ, etc.
-            cleanText = cleanText.replace(/\b\d+(?:[.,]\d{3})*\s*(?:đ|₫|VND|vnđ|vnd)/gi, '');
-            // Clean discount percentage like -48% or 48%
-            cleanText = cleanText.replace(/[-+]\s*\d+\s*%/g, '');
-            // Clean multiple spaces
-            cleanText = cleanText.replace(/\s+/g, ' ').trim();
-
-            let codes = [];
-            
-            // Pattern 1: Dotted codes (Hafele)
-            const dotReg = /\b\d{3}\.\d{2}\.\d{3}\b/g;
-            let match;
-            while ((match = dotReg.exec(cleanText)) !== null) {
-                codes.push(match[0]);
+        function getSlug(link = '') {
+            try {
+                const url = new URL(link);
+                return decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || '');
+            } catch {
+                return '';
             }
+        }
+
+        function cleanText(str = '') {
+            return removeVietnameseTone(str)
+                .replace(/[×–—]/g, ' ')
+                .replace(/[_/]+/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+        }
+
+        function extractSeries(text) {
+            const m = cleanText(text).match(/\b(?:series|serie|seri)\s*(\d+)\b/i);
+            return m ? m[1] : null;
+        }
+
+        function extractSize(text) {
+            const m = cleanText(text).match(/\b\d+(?:[.,]\d+)?\s*(?:cm|mm|l|lit|lít|w|kw|kg|g)\b/i);
+            return m ? m[0].replace(/\s+/g, '').toUpperCase() : null;
+        }
+
+        function stripNonCodeInfo(text) {
+            return cleanText(text)
+                .replace(/\b(?:series|serie|seri)\s*\d+\b/gi, ' ')
+                .replace(/\b\d+(?:[.,]\d+)?\s*(?:cm|mm|l|lit|lít|w|kw|kg|g)\b/gi, ' ')
+                .replace(/\b\d+\s*(?:bộ|bo|món|mon|lớp|lop|năm|nam)\b/gi, ' ')
+                .replace(/\bAISI\s*304\b/gi, ' ')
+                .replace(/\bPVD\s*\d+\b/gi, ' ')
+                .replace(/\b\d{2,4}\s*[x×]\s*\d{2,4}\b/gi, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+        }
+
+        function scoreCode(code, fullText) {
+            const c = code.toUpperCase();
+            let score = 0;
+
+            if (/[A-Z]/.test(c) && /\d/.test(c)) score += 5;
+            if (c.length >= 6) score += 3;
+            if (/[-_.]/.test(c)) score += 2;
             
-            // Pattern 2: Comprehensive alphanumeric model code matching (case-insensitive)
-            // Prefix cannot contain space to prevent greedy shadowing of letters from preceding words
-            const modelReg = /\b(?:[A-Z]{1,4}[-_]?)?[A-Z_]*\d+[A-Z0-9_]*(?:[-/][A-Z0-9_]+)*(?:[- ]?(?:PLUS|PRO|NOTE|KPLUS|EG|VN|EVN|IN|II|IG|Z|S|G))?\b/gi;
-            while ((match = modelReg.exec(cleanText)) !== null) {
-                const matched = match[0];
-                const prevChar = match.index > 0 ? cleanText[match.index - 1] : '';
-                const nextChar = cleanText[match.index + matched.length];
-                const letterRegex = /[a-zA-Zàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
-                const isPrevLetter = prevChar && letterRegex.test(prevChar);
-                const isNextLetter = nextChar && letterRegex.test(nextChar);
-                
-                if (!isPrevLetter && !isNextLetter) {
-                    let cleanedCode = matched;
-                    const excludedWords = [
-                        'GAS', 'VÙNG', 'VUNG', 'NẤU', 'NAU', 'LÍT', 'LIT', 'TỪ', 'TU', 'ĐÔI', 'DOI',
-                        'HỒNG', 'NGOẠI', 'LÒ', 'HÚT', 'MÙI', 'MÁY', 'RỬA', 'BÁT', 'CHÉN', 'KÍNH',
-                        'ÂM', 'DƯƠNG', 'NHẬP', 'KHẨU', 'ĐỨC', 'DUC', 'TÂY', 'BAN', 'NHA', 'THÁI', 'LAN', 'THAI',
-                        'MALAYSIA', 'HÀNG', 'CHÍNH', 'HÃNG', 'GIA', 'GIÁ', 'RẺ', 'RE', 'TẶNG', 'TANG', 'QUÀ', 'QUA',
-                        'KHUYẾN', 'KHUYEN', 'MÃI', 'MAI', 'HOT', 'NEW', 'MODEL', 'BẾP', 'BEP', 'ĐIỆN', 'DIEN',
-                        'VÙNG NẤU', 'VUNG NAU', 'KÍNH ÂM', 'KINH AM', 'NHẬP KHẨU', 'NHAP KHAU', 'CHÍNH HÃNG', 'CHINH HANG',
-                        'TRANG', 'MS', 'VV', 'GB', 'TB', 'MB', 'VÒNG', 'VONG', 'LÍT/PHÚT', 'LIT/PHUT', 'MÉT', 'MET',
-                        'INOX', 'PHI', 'PHÍ', 'ĐỘ', 'DO', 'NĂM', 'NAM', 'KÍCH', 'KICH', 'THÁNG', 'THANG', 'BẢO', 'HÀNH', 
-                        'BAO', 'HANH', 'BH', 'ĐỨNG', 'DUNG', 'NẰM', 'ĐẦU', 'DAU', 'LỖ', 'LO', 'BỘ', 'BO', 'CÁNH', 'CANH', 
-                        'KHE', 'KHAY', 'MÂM', 'MAM', 'CHẬU', 'CHAU', 'VÒI', 'VOI', 'RỔ', 'RO', 'KỆ', 'KE', 'ĐÁ', 'DA', 
-                        'CẮT', 'CAT', 'MẶT', 'MAT', 'DÀY', 'DAY', 'RỘNG', 'RONG', 'CAO', 'SÂU', 'SAU', 'THÀNH', 'THANH', 
-                        'PHÂN', 'PHAN', 'LI', 'LY', 'CHÂN', 'CHAN', 'ỐNG', 'ONG', 'KHOÁ', 'KHOA', 'CỬA', 'CUA', 'HỐ', 
-                        'HO', 'CHỔI', 'CHOI', 'DÂY', 'DAY'
-                    ];
-                    const lastWordMatch = matched.match(/[- ]([A-Z]{2,4})$/i);
-                    if (lastWordMatch) {
-                        const lastWord = lastWordMatch[1].toUpperCase();
-                        if (excludedWords.includes(lastWord)) {
-                            cleanedCode = matched.substring(0, matched.length - lastWordMatch[0].length).trim();
-                        }
-                    }
-                    codes.push(cleanedCode);
-                }
+            const escaped = c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const occurrences = (fullText.match(new RegExp(escaped, 'gi')) || []).length;
+            if (occurrences > 1) {
+                score += 2;
             }
 
-            let uniqueCodes = [...new Set(codes)];
-            
-            // Filter codes using isValidSku helper logic
-            uniqueCodes = uniqueCodes.filter(code => {
-                const clean = code.trim().toUpperCase();
-                if (clean.length < 3) return false;
-                
-                // Immediately allow Hafele article numbers (dotted codes)
-                if (/^\d{3}\.\d{2}\.\d{3}$/.test(clean)) return true;
-                
-                // Must contain at least one digit and one letter
-                if (!/[A-Z]/.test(clean) || !/\d/.test(clean)) return false;
-                
-                // Exclude materials (e.g. INOX, INOX304, SUS304, SS304, etc.)
-                if (/(?:INOX|SUS|SS304|SS201|SS316|SS430|S304|S201|S316|S430)/i.test(clean)) {
-                    return false;
-                }
-                if (/^(?:INOX|SUS)$/i.test(clean)) {
-                    return false;
-                }
-                
-                // Exclude package quantity multipliers like 'x 4', 'x4'
-                if (/^X\s*\d+$/i.test(clean)) {
-                    return false;
-                }
-                
-                // Exclude common words
-                const excludedWords = [
-                    'GAS', 'VÙNG', 'VUNG', 'NẤU', 'NAU', 'LÍT', 'LIT', 'TỪ', 'TU', 'ĐÔI', 'DOI',
-                    'HỒNG', 'NGOẠI', 'LÒ', 'HÚT', 'MÙI', 'MÁY', 'RỬA', 'BÁT', 'CHÉN', 'KÍNH',
-                    'ÂM', 'DƯƠNG', 'NHẬP', 'KHẨU', 'ĐỨC', 'DUC', 'TÂY', 'BAN', 'NHA', 'THÁI', 'LAN', 'THAI',
-                    'MALAYSIA', 'HÀNG', 'CHÍNH', 'HÃNG', 'GIA', 'GIÁ', 'RẺ', 'RE', 'TẶNG', 'TANG', 'QUÀ', 'QUA',
-                    'KHUYẾN', 'KHUYEN', 'MÃI', 'MAI', 'HOT', 'NEW', 'MODEL', 'BẾP', 'BEP', 'ĐIỆN', 'DIEN',
-                    'VÙNG NẤU', 'VUNG NAU', 'KÍNH ÂM', 'KINH AM', 'NHẬP KHẨU', 'NHAP KHAU', 'CHÍNH HÃNG', 'CHINH HANG',
-                    'TRANG', 'MS', 'VV', 'GB', 'TB', 'MB', 'VÒNG', 'VONG', 'LÍT/PHÚT', 'LIT/PHUT', 'MÉT', 'MET',
-                    'INOX', 'PHI', 'PHÍ', 'ĐỘ', 'DO', 'NĂM', 'NAM', 'KÍCH', 'KICH', 'THÁNG', 'THANG', 'BẢO', 'HÀNH', 
-                    'BAO', 'HANH', 'BH', 'ĐỨNG', 'DUNG', 'NẰM', 'ĐẦU', 'DAU', 'LỖ', 'LO', 'BỘ', 'BO', 'CÁNH', 'CANH', 
-                    'KHE', 'KHAY', 'MÂM', 'MAM', 'CHẬU', 'CHAU', 'VÒI', 'VOI', 'RỔ', 'RO', 'KỆ', 'KE', 'ĐÁ', 'DA', 
-                    'CẮT', 'CAT', 'MẶT', 'MAT', 'DÀY', 'DAY', 'RỘNG', 'RONG', 'CAO', 'SÂU', 'SAU', 'THÀNH', 'THANH', 
-                    'PHÂN', 'PHAN', 'LI', 'LY', 'CHÂN', 'CHAN', 'ỐNG', 'ONG', 'KHOÁ', 'KHOA', 'CỬA', 'CUA', 'HỐ', 
-                    'HO', 'CHỔI', 'CHOI', 'DÂY', 'DAY'
-                ];
-                
-                if (excludedWords.includes(clean)) return false;
-                
-                // Check parts
-                const parts = clean.split(/[- ]+/);
-                for (const part of parts) {
-                    if (excludedWords.includes(part) && !/\d/.test(part)) {
-                        return false;
-                    }
-                }
-                
-                // Exclude units (added CM and MM)
-                const isUnit = /^\d+(?:W|V|HZ|L|KG|PHUT|THANG|TRANG|MS|S|H|N|VN|TB|GB|MB|VÙNG|VUNG|VÒNG|VONG|CM|MM)$/i.test(clean);
-                if (isUnit) return false;
-                
-                // Exclude dimensions like 600x400, 700x400x150
-                const isDimension = /^\d+\s*[xX]\s*\d+(?:\s*[xX]\s*\d+)*$/i.test(clean);
-                if (isDimension) return false;
-                
-                return true;
-            });
+            // Trừ điểm các thứ dễ là thông số
+            if (/^\d+$/.test(c)) score -= 10;
+            if (/^\d+(CM|MM|L|W|KG|G)$/i.test(c)) score -= 10;
+            if (/^(PVD|AISI|SERIES|SERI|SERIE)/i.test(c)) score -= 10;
 
-            // De-duplicate: if one code is a substring of another, keep the longer one
-            uniqueCodes = uniqueCodes.filter(c => {
-                return !uniqueCodes.some(other => other !== c && other.toLowerCase().includes(c.toLowerCase()));
-            });
-            
-            let cleanName = cleanText;
-            uniqueCodes.forEach(code => {
-                const escapedCode = code.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-                const reg = new RegExp(escapedCode, 'gi');
-                cleanName = cleanName.replace(reg, '');
-            });
-            
-            cleanName = cleanName.replace(/\s*-\s*$/, '').replace(/^\s*-\s*/, '').replace(/\s+/g, ' ').trim();
-            cleanName = cleanName.replace(/\/+\s*$/, '').replace(/^\s*\/+/, '').replace(/\s+/g, ' ').trim();
-            
-            // Extract Bosch/general series from title
-            let seriesFromTitle = null;
-            const seriesTitleRegex = /(?:SERIES|SERIE|SERI)\s*(\d+)/i;
-            const matchSeriesTitle = fullName.match(seriesTitleRegex);
-            if (matchSeriesTitle) {
-                seriesFromTitle = matchSeriesTitle[0].trim();
+            return score;
+        }
+
+        function extractModelInfo(name = '', link = '') {
+            const slug = getSlug(link);
+            const rawText = `${name} ${slug.replace(/-/g, ' ')}`;
+            const normalized = cleanText(rawText).toUpperCase();
+
+            const series = extractSeries(rawText);
+            const size = extractSize(rawText);
+
+            let candidates = [];
+
+            // Rule đặc biệt cho KAFF: slug kiểu kaffkf-ih202ic => KF-IH202IC
+            const kaff = slug.match(/kaffkf-?([a-z0-9]+)/i);
+            if (kaff) candidates.push(`KF-${kaff[1].toUpperCase()}`);
+
+            // Rule cho Konox chậu/vòi dạng Vigo 860, Stelo 780U, Neron 600T
+            const konox = normalized.match(/\b(VIGO|STELO|NERON|TARI(?: SMART)?|MEKONG|DIAMOND)\s+(\d{3,4}[A-Z]?)\b/i);
+            if (konox) candidates.push(`${konox[1]} ${konox[2]}`.toUpperCase());
+
+            const textForCode = stripNonCodeInfo(rawText).toUpperCase();
+
+            const codePatterns = [
+                /\b\d{3}[._-]\d{2}[._-]\d{3}\b/gi,
+                /\b[A-Z]{1,5}[-_]\d[A-Z0-9]{2,}\b/gi,
+                /\b[A-Z]{2,}\d[A-Z0-9]{2,}\b/gi,
+                /\b[A-Z]\d[A-Z0-9]{2,}\b/gi
+            ];
+
+            for (const re of codePatterns) {
+                const found = textForCode.match(re) || [];
+                candidates.push(...found);
             }
 
-            // Split baseSku and series for each code
-            let baseSkus = [];
-            let seriesSuffixes = [];
-            
-            // Clean country code suffixes from split list so e.g. WQG24200SG remains intact as SKU
-            const suffixRegex = /\s*(EG\/KPLUS|EG|KPLUS|PLUS|Iplus|PRO|NOTE|Kplus)$/i;
-            uniqueCodes.forEach(code => {
-                const matchSuffix = code.match(suffixRegex);
-                if (matchSuffix) {
-                    const series = matchSuffix[1].toUpperCase();
-                    const rawBase = code.substring(0, code.length - matchSuffix[0].length);
-                    const baseSku = rawBase.replace(/[- ]+$/, '').trim();
-                    baseSkus.push(baseSku);
-                    seriesSuffixes.push(series);
-                } else {
-                    baseSkus.push(code);
-                }
-            });
+            candidates = [...new Set(
+                candidates
+                    .map(x => x.replace(/[._]/g, '.').replace(/\s+/g, ' ').trim().toUpperCase())
+                    .filter(Boolean)
+            )];
 
-            let finalSeries = seriesFromTitle || '';
-            if (seriesSuffixes.length > 0) {
-                const joinedSuffixes = [...new Set(seriesSuffixes)].join(' / ');
-                finalSeries = finalSeries ? `${finalSeries} (${joinedSuffixes})` : joinedSuffixes;
-            }
+            const ranked = candidates
+                .map(code => ({ code, score: scoreCode(code, normalized) }))
+                .filter(x => x.score >= 5)
+                .sort((a, b) => b.score - a.score);
 
             return {
-                sku: baseSkus.join(' / '),
-                series: finalSeries || null,
+                maSanPham: ranked[0]?.code || null,
+                series,
+                kichThuoc: size
+            };
+        }
+
+        function getCleanName(fullName, maSanPham, series, kichThuoc) {
+            let clean = fullName;
+            if (maSanPham) {
+                const escaped = maSanPham.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                clean = clean.replace(new RegExp(escaped, 'gi'), '');
+                
+                const parts = maSanPham.split(/\s+/);
+                if (parts.length > 1) {
+                    const pattern = parts.join('\\s*[-_]?\\s*');
+                    clean = clean.replace(new RegExp(pattern, 'gi'), '');
+                }
+            }
+            
+            clean = clean.replace(/\b(?:series|serie|seri)\s*\d+\b/gi, '');
+            clean = clean.replace(/\b\d+(?:[.,]\d+)?\s*(?:cm|mm|l|lit|lít|w|kw|kg|g)\b/gi, '');
+            clean = clean.replace(/\b(?:AISI\s*304|PVD\s*\d+|lớp)\b/gi, '');
+
+            clean = clean.replace(/[\[\]|,\-+()]/g, ' ');
+            clean = clean.replace(/\s+/g, ' ').trim();
+            clean = clean.replace(/\s*-\s*$/, '').replace(/^\s*-\s*/, '');
+            clean = clean.replace(/\/+\s*$/, '').replace(/^\s*\/+/, '');
+            return clean.trim();
+        }
+
+        function extractSku(fullName, link = '') {
+            const info = extractModelInfo(fullName, link);
+            const cleanName = getCleanName(fullName, info.maSanPham, info.series, info.kichThuoc);
+            return {
+                sku: info.maSanPham,
+                series: info.series,
+                kichThuoc: info.kichThuoc,
                 cleanName: cleanName
             };
         }
@@ -1725,9 +1697,10 @@
 
         // ── Thêm sản phẩm vào cả Table và Grid view ──
         function addProduct(prod) {
-            const extracted = extractSku(prod.ten);
+            const extracted = extractSku(prod.ten, prod.link);
             prod.ma = extracted.sku;
             prod.series = extracted.series;
+            prod.kichThuoc = extracted.kichThuoc;
             prod.tenSạch = extracted.cleanName;
 
             mangDuLieuToanCuc.push(prod);
@@ -1779,12 +1752,16 @@
             const seriesHtml = prod.series 
                 ? `<span class="badge badge-series fw-semibold">${prod.series}</span>` 
                 : `<span class="text-muted small">-</span>`;
+            const kichThuocHtml = prod.kichThuoc 
+                ? `<span class="badge badge-size fw-semibold">${prod.kichThuoc}</span>` 
+                : `<span class="text-muted small">-</span>`;
             row.innerHTML = `
                 <td class="text-center text-muted fw-bold">${prod.stt}</td>
                 <td class="text-center">${imageHtml}</td>
                 <td>${nameHtml}</td>
                 <td>${maHtml}</td>
                 <td>${seriesHtml}</td>
+                <td>${kichThuocHtml}</td>
                 <td class="text-center price-badge">${prod.gia}</td>
                 <td class="text-center"><span class="badge bg-secondary bg-opacity-20 text-light fw-normal">Trang ${prod.trang}</span></td>
             `;
@@ -1805,8 +1782,11 @@
             const cardSeriesHtml = prod.series 
                 ? `<span class="badge badge-series fw-normal ms-1" style="font-size: 0.7rem;">${prod.series}</span>`
                 : '';
-            const badgesHtml = (cardMaHtml || cardSeriesHtml) 
-                ? `<div class="mb-2">${cardMaHtml}${cardSeriesHtml}</div>`
+            const cardKichThuocHtml = prod.kichThuoc 
+                ? `<span class="badge badge-size fw-normal ms-1" style="font-size: 0.7rem;">${prod.kichThuoc}</span>`
+                : '';
+            const badgesHtml = (cardMaHtml || cardSeriesHtml || cardKichThuocHtml) 
+                ? `<div class="mb-2">${cardMaHtml}${cardSeriesHtml}${cardKichThuocHtml}</div>`
                 : '';
             cardCol.innerHTML = `
                 <div class="product-card">
@@ -2000,12 +1980,13 @@
         function taiFileCSV() {
             if(mangDuLieuToanCuc.length === 0) return alert("Chưa có dữ liệu sản phẩm để xuất file!");
             
-            const headers = ['STT', 'Ten San Pham', 'Ma San Pham', 'Dong / Series', 'Gia Ban', 'Nguon Trang', 'Lien Ket San Pham', 'Link Anh'];
+            const headers = ['STT', 'Ten San Pham', 'Ma San Pham', 'Dong / Series', 'Kich Thuoc', 'Gia Ban', 'Nguon Trang', 'Lien Ket San Pham', 'Link Anh'];
             const rows = mangDuLieuToanCuc.map((item, index) => [
                 index + 1, 
                 `"${item.tenSạch.replace(/"/g, '""')}"`, 
-                `"${item.ma}"`, 
+                `"${item.ma || ''}"`, 
                 `"${item.series || ''}"`, 
+                `"${item.kichThuoc || ''}"`, 
                 `"${item.gia}"`, 
                 `"Trang ${item.trang}"`,
                 `"${item.link || ''}"`,
@@ -2069,13 +2050,18 @@
                 rowData[1] = `"${item.tenSạch.replace(/"/g, '""')}"`;     // Title
                 rowData[2] = `""`;                                        // Body (HTML)
                 rowData[3] = `"Store Auto Import"`;                       // Vendor
-                if (item.series) {
-                    rowData[5] = `"${item.series.replace(/"/g, '""')}"`;  // Tags
+                
+                const tagsList = [];
+                if (item.series) tagsList.push(`Series ${item.series}`);
+                if (item.kichThuoc) tagsList.push(item.kichThuoc);
+                if (tagsList.length > 0) {
+                    rowData[5] = `"${tagsList.join(', ').replace(/"/g, '""')}"`; // Tags
                 }
+                
                 rowData[6] = `"TRUE"`;                                    // Published
                 rowData[7] = `"Title"`;                                   // Option1 Name
                 rowData[8] = `"Default Title"`;                           // Option1 Value
-                rowData[13] = `"${item.ma}"`;                             // Variant SKU
+                rowData[13] = `"${item.ma || ''}"`;                             // Variant SKU
                 rowData[19] = `"${priceClean}"`;                          // Variant Price
                 rowData[24] = `"${item.anh || ''}"`;                      // Image Src
                 rowData[49] = `"active"`;                                 // Status
