@@ -761,6 +761,9 @@
                                 <button type="button" onclick="setCheDoXem('compare')" id="btnViewCompare" class="btn rounded-pill px-3 btn-view-mode">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="me-1"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>So sánh
                                 </button>
+                                <button type="button" onclick="setCheDoXem('csvCompare')" id="btnViewCsvCompare" class="btn rounded-pill px-3 btn-view-mode">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="me-1"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>So sánh CSV
+                                </button>
                             </div>
                             
                             <!-- Export Dropdown -->
@@ -813,6 +816,56 @@
                         <div id="compareContainer" class="compare-view-container flex-grow-1 overflow-y-auto d-none" style="max-height: 480px; padding: 4px;">
                             <div class="row row-cols-1 g-3" id="vungSoSanh">
                                 <!-- Dynamic comparison cards -->
+                            </div>
+                        </div>
+
+                        <!-- CSV Comparison Wrapper -->
+                        <div id="csvCompareContainer" class="csv-compare-view-container flex-grow-1 overflow-y-auto d-none" style="max-height: 480px; padding: 4px;">
+                            <div class="card bg-dark bg-opacity-40 border border-white border-opacity-5 p-3 mb-3" style="background: rgba(15, 20, 35, 0.45) !important;">
+                                <h6 class="fw-bold text-white mb-3" style="font-size: 0.88rem; letter-spacing: 0.5px;">⚖️ SO SÁNH GIÁ TỪ 2 FILE CSV CỤC BỘ</h6>
+                                <div class="row g-3">
+                                    <div class="col-md-5">
+                                        <label class="form-label small text-light fw-semibold" style="font-size: 0.72rem;">File 1 (Danh sách sản phẩm của bạn):</label>
+                                        <input type="file" id="csvFile1" accept=".csv" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-md-5">
+                                        <label class="form-label small text-light fw-semibold" style="font-size: 0.72rem;">File 2 (Danh sách của đối thủ / Bếp Ngọc Bảo):</label>
+                                        <input type="file" id="csvFile2" accept=".csv" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-md-2 d-flex align-items-end">
+                                        <button onclick="runLocalCsvComparison()" class="btn btn-premium btn-sm w-100 py-1.5 fw-bold" style="font-size: 0.78rem;">So Sánh</button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div id="csvCompareResults" class="d-none">
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <span class="small text-light" style="font-size: 0.78rem;">Tìm thấy <strong id="csvMatchCount" class="text-success">0</strong> cặp sản phẩm trùng khớp mã sản phẩm và series.</span>
+                                    <button onclick="taiFileCompareCSVResults()" class="btn btn-sm btn-outline-warning fw-semibold" style="font-size: 0.72rem;">📥 Tải CSV Kết Quả So Sánh</button>
+                                </div>
+                                <div class="table-responsive-container" style="max-height: 380px;">
+                                    <table class="table table-dark table-premium align-middle mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th style="width: 45px;" class="text-center">STT</th>
+                                                <th style="width: 120px;" class="text-center">Mã SP</th>
+                                                <th style="width: 90px;" class="text-center">Series</th>
+                                                <th style="min-width: 200px;">Sản phẩm (File 1)</th>
+                                                <th style="width: 110px;" class="text-center">Giá File 1</th>
+                                                <th style="min-width: 200px;">Sản phẩm (File 2)</th>
+                                                <th style="width: 110px;" class="text-center">Giá File 2</th>
+                                                <th style="width: 130px;" class="text-center">Chênh lệch</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="vungSoSanhCsv">
+                                            <!-- Dynamic comparison rows -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            
+                            <div id="csvCompareEmpty" class="text-center py-5 text-muted small" style="font-size: 0.78rem;">
+                                📂 Vui lòng chọn hai tệp tin CSV ở trên và nhấn nút <strong>So Sánh</strong> để bắt đầu đối chiếu.
                             </div>
                         </div>
 
@@ -1164,34 +1217,50 @@
             const btnGrid = document.getElementById('btnViewGrid');
             const btnTable = document.getElementById('btnViewTable');
             const btnCompare = document.getElementById('btnViewCompare');
+            const btnCsvCompare = document.getElementById('btnViewCsvCompare');
+            
             const tableDiv = document.getElementById('tableContainer');
             const gridDiv = document.getElementById('gridContainer');
             const compareDiv = document.getElementById('compareContainer');
+            const csvCompareDiv = document.getElementById('csvCompareContainer');
+            const emptyState = document.getElementById('emptyState');
             
             btnGrid.classList.remove('active');
             btnTable.classList.remove('active');
             btnCompare.classList.remove('active');
+            if (btnCsvCompare) btnCsvCompare.classList.remove('active');
             
             tableDiv.classList.add('d-none');
             gridDiv.classList.add('d-none');
             compareDiv.classList.add('d-none');
+            if (csvCompareDiv) csvCompareDiv.classList.add('d-none');
+            if (emptyState) emptyState.classList.add('d-none');
             
             if (mode === 'grid') {
                 btnGrid.classList.add('active');
                 if (mangDuLieuToanCuc.length > 0) {
                     gridDiv.classList.remove('d-none');
+                } else {
+                    if (emptyState) emptyState.classList.remove('d-none');
                 }
             } else if (mode === 'table') {
                 btnTable.classList.add('active');
                 if (mangDuLieuToanCuc.length > 0) {
                     tableDiv.classList.remove('d-none');
+                } else {
+                    if (emptyState) emptyState.classList.remove('d-none');
                 }
             } else if (mode === 'compare') {
                 btnCompare.classList.add('active');
                 if (mangDuLieuToanCuc.length > 0) {
                     compareDiv.classList.remove('d-none');
+                } else {
+                    if (emptyState) emptyState.classList.remove('d-none');
                 }
                 renderSoSanh();
+            } else if (mode === 'csvCompare') {
+                if (btnCsvCompare) btnCsvCompare.classList.add('active');
+                if (csvCompareDiv) csvCompareDiv.classList.remove('d-none');
             }
         }
 
@@ -2177,6 +2246,261 @@
             a.setAttribute("download", "so_sanh_gia_san_pham.csv");
             a.click();
             writeToConsole(`Đã tải xuống thành công tệp CSV so sánh giá.`, 'success');
+        }
+
+        // ── Local CSV Comparison Logic ──
+        let localCompareResults = [];
+
+        function parseCSVText(text) {
+            const lines = [];
+            let row = [""];
+            let inQuotes = false;
+            
+            for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+                const nextChar = text[i+1];
+                
+                if (char === '"') {
+                    if (inQuotes && nextChar === '"') {
+                        row[row.length - 1] += '"';
+                        i++;
+                    } else {
+                        inQuotes = !inQuotes;
+                    }
+                } else if (char === ',' && !inQuotes) {
+                    row.push("");
+                } else if ((char === '\r' || char === '\n') && !inQuotes) {
+                    if (char === '\r' && nextChar === '\n') {
+                        i++;
+                    }
+                    lines.push(row.map(val => val.trim()));
+                    row = [""];
+                } else {
+                    row[row.length - 1] += char;
+                }
+            }
+            if (row.length > 1 || row[0] !== "") {
+                lines.push(row.map(val => val.trim()));
+            }
+            return lines;
+        }
+
+        function mapCsvData(parsedLines) {
+            if (parsedLines.length < 2) return [];
+            const headers = parsedLines[0].map(h => h.trim().toLowerCase());
+            
+            const codeIdx = headers.findIndex(h => h.includes('ma san pham') || h.includes('ma sp') || h.includes('model') || h.includes('sku'));
+            const seriesIdx = headers.findIndex(h => h.includes('series') || h.includes('dong / series') || h.includes('dong/series'));
+            const nameIdx = headers.findIndex(h => h.includes('ten san pham') || h.includes('title') || h.includes('name'));
+            const priceIdx = headers.findIndex(h => h.includes('gia ban') || h.includes('gia') || h.includes('price'));
+            const urlIdx = headers.findIndex(h => h.includes('lien ket') || h.includes('link') || h.includes('url'));
+            const imgIdx = headers.findIndex(h => h.includes('anh') || h.includes('image'));
+            const sizeIdx = headers.findIndex(h => h.includes('kich thuoc') || h.includes('size'));
+            
+            return parsedLines.slice(1).map(row => {
+                return {
+                    name: nameIdx !== -1 ? (row[nameIdx] || '') : '',
+                    code: codeIdx !== -1 ? (row[codeIdx] || '') : '',
+                    series: seriesIdx !== -1 ? (row[seriesIdx] || '') : '',
+                    price: priceIdx !== -1 ? (row[priceIdx] || '') : '',
+                    url: urlIdx !== -1 ? (row[urlIdx] || '') : '',
+                    image: imgIdx !== -1 ? (row[imgIdx] || '') : '',
+                    size: sizeIdx !== -1 ? (row[sizeIdx] || '') : ''
+                };
+            }).filter(item => item.name);
+        }
+
+        async function runLocalCsvComparison() {
+            const file1Input = document.getElementById('csvFile1');
+            const file2Input = document.getElementById('csvFile2');
+            
+            const file1 = file1Input.files[0];
+            const file2 = file2Input.files[0];
+            
+            if (!file1 || !file2) {
+                return alert("Vui lòng chọn cả 2 file CSV để tiến hành so sánh!");
+            }
+            
+            const readAsText = (file) => new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target.result);
+                reader.readAsText(file);
+            });
+            
+            try {
+                const text1 = await readAsText(file1);
+                const text2 = await readAsText(file2);
+                
+                const lines1 = parseCSVText(text1);
+                const lines2 = parseCSVText(text2);
+                
+                const data1 = mapCsvData(lines1);
+                const data2 = mapCsvData(lines2);
+                
+                if (data1.length === 0 || data2.length === 0) {
+                    return alert("Một trong hai file hoặc cả hai không chứa dữ liệu hợp lệ hoặc định dạng cột không đúng.");
+                }
+                
+                const normalizeKey = (code, series) => {
+                    const c = (code || '').replace(/[-_\s/]+/g, '').toUpperCase();
+                    const s = (series || '').replace(/[-_\s/]+/g, '').toUpperCase();
+                    return c + (s ? `_SERIES${s}` : '');
+                };
+                
+                const file2Index = {};
+                data2.forEach(item => {
+                    if (!item.code) return;
+                    const key = normalizeKey(item.code, item.series);
+                    if (!file2Index[key]) file2Index[key] = [];
+                    file2Index[key].push(item);
+                });
+                
+                localCompareResults = [];
+                let matchCount = 0;
+                
+                data1.forEach(item1 => {
+                    if (!item1.code) return;
+                    const key = normalizeKey(item1.code, item1.series);
+                    const matches = file2Index[key];
+                    
+                    if (matches && matches.length > 0) {
+                        matches.forEach(item2 => {
+                            matchCount++;
+                            const p1 = parseInt(item1.price.replace(/\D/g, '')) || 0;
+                            const p2 = parseInt(item2.price.replace(/\D/g, '')) || 0;
+                            let diffText = 'N/A';
+                            let diffVal = 0;
+                            
+                            if (p1 > 0 && p2 > 0) {
+                                diffVal = p1 - p2;
+                                if (diffVal === 0) {
+                                    diffText = 'Bằng giá';
+                                } else {
+                                    const dir = diffVal > 0 ? 'đắt hơn' : 'rẻ hơn';
+                                    diffText = `${Math.abs(diffVal).toLocaleString('vi-VN')} ₫ (${dir})`;
+                                }
+                            }
+                            
+                            localCompareResults.push({
+                                stt: matchCount,
+                                code: item1.code,
+                                series: item1.series || item2.series || '',
+                                name1: item1.name,
+                                price1: item1.price || 'Liên hệ',
+                                url1: item1.url,
+                                name2: item2.name,
+                                price2: item2.price || 'Liên hệ',
+                                url2: item2.url,
+                                difference: diffText,
+                                diffVal: diffVal
+                            });
+                        });
+                    }
+                });
+                
+                const tbody = document.getElementById('vungSoSanhCsv');
+                tbody.innerHTML = '';
+                
+                if (localCompareResults.length === 0) {
+                    document.getElementById('csvCompareResults').classList.add('d-none');
+                    document.getElementById('csvCompareEmpty').innerHTML = "❌ Không tìm thấy sản phẩm nào trùng khớp Mã sản phẩm và Series giữa 2 file.";
+                    document.getElementById('csvCompareEmpty').classList.remove('d-none');
+                    return;
+                }
+                
+                document.getElementById('csvMatchCount').innerText = localCompareResults.length;
+                document.getElementById('csvCompareEmpty').classList.add('d-none');
+                document.getElementById('csvCompareResults').classList.remove('d-none');
+                
+                localCompareResults.forEach(row => {
+                    const tr = document.createElement('tr');
+                    
+                    const p1Val = parseInt(row.price1.replace(/\D/g, '')) || 0;
+                    const p2Val = parseInt(row.price2.replace(/\D/g, '')) || 0;
+                    
+                    let p1Html = `<span>${row.price1}</span>`;
+                    let p2Html = `<span>${row.price2}</span>`;
+                    let diffClass = '';
+                    
+                    if (p1Val > 0 && p2Val > 0) {
+                        if (p1Val < p2Val) {
+                            p1Html = `<span class="text-success fw-bold">${row.price1} 🏆</span>`;
+                            p2Html = `<span class="text-light">${row.price2}</span>`;
+                            diffClass = 'text-success';
+                        } else if (p1Val > p2Val) {
+                            p1Html = `<span class="text-light">${row.price1}</span>`;
+                            p2Html = `<span class="text-success fw-bold">${row.price2} 🏆</span>`;
+                            diffClass = 'text-danger';
+                        } else {
+                            diffClass = 'text-warning';
+                        }
+                    }
+                    
+                    const link1 = row.url1 
+                        ? `<a href="${row.url1}" target="_blank" class="text-white text-decoration-none hover-primary">${row.name1}</a>`
+                        : `<span class="text-light">${row.name1}</span>`;
+                        
+                    const link2 = row.url2 
+                        ? `<a href="${row.url2}" target="_blank" class="text-white text-decoration-none hover-primary">${row.name2}</a>`
+                        : `<span class="text-light">${row.name2}</span>`;
+                    
+                    tr.innerHTML = `
+                        <td class="text-center text-muted fw-bold">${row.stt}</td>
+                        <td class="text-center"><span class="badge badge-sku fw-semibold">${row.code}</span></td>
+                        <td class="text-center">${row.series ? `<span class="badge badge-series fw-normal">${row.series}</span>` : ''}</td>
+                        <td>${link1}</td>
+                        <td class="text-center">${p1Html}</td>
+                        <td>${link2}</td>
+                        <td class="text-center">${p2Html}</td>
+                        <td class="text-center ${diffClass} fw-bold" style="font-size:0.82rem;">${row.difference}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+                
+                writeToConsole(`Đã hoàn tất so sánh. Tìm thấy ${localCompareResults.length} cặp sản phẩm khớp.`, 'success');
+                
+            } catch (err) {
+                console.error(err);
+                alert(`Lỗi khi đọc hoặc xử lý file CSV: ${err.message}`);
+            }
+        }
+        
+        function taiFileCompareCSVResults() {
+            if (localCompareResults.length === 0) return alert("Chưa có kết quả so sánh để tải!");
+            
+            const headers = [
+                'STT', 
+                'Ma San Pham', 
+                'Dong / Series', 
+                'Ten San Pham (File 1)', 
+                'Gia File 1', 
+                'Lien Ket File 1', 
+                'Ten San Pham (File 2)', 
+                'Gia File 2', 
+                'Lien Ket File 2', 
+                'Chenh Lech Gia'
+            ];
+            
+            const rows = localCompareResults.map(r => [
+                r.stt,
+                `"${r.code}"`,
+                `"${r.series}"`,
+                `"${r.name1.replace(/"/g, '""')}"`,
+                `"${r.price1}"`,
+                `"${r.url1 || ''}"`,
+                `"${r.name2.replace(/"/g, '""')}"`,
+                `"${r.price2}"`,
+                `"${r.url2 || ''}"`,
+                `"${r.difference}"`
+            ]);
+            
+            const csvContent = '\ufeff' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.setAttribute("download", "ket_qua_so_sanh_2_file.csv");
+            a.click();
+            writeToConsole(`Đã tải xuống thành công tệp CSV kết quả so sánh.`, 'success');
         }
     </script>
 </body>
